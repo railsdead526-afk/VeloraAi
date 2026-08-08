@@ -1,4 +1,6 @@
 # VeloraAi
+VeloraAi adalah backend API berbasis FastAPI yang menyediakan fitur autentikasi pengguna dan manajemen item. Project ini menerapkan registrasi, login, JWT authentication, serta operasi CRUD dengan ownership-based access control agar setiap user hanya dapat mengakses item miliknya sendiri. Project juga dilengkapi automated testing menggunakan pytest untuk memastikan setiap fitur berjalan dengan baik.
+
 
 Backend API built with FastAPI.
 
