@@ -18,9 +18,29 @@ Backend API built with FastAPI.
 - Pytest
 
 ## Setup
-```bash
 python -m venv venv
 source venv/bin/activate
 python -m pip install -r requirements.txt
 uvicorn app.main:app --reload
-```
+
+## Run Tests
+python -m pytest -v
+
+## Project Structure
+app/
+  api/
+  core/
+  crud/
+  models/
+  schemas/
+  main.py
+
+tests/
+  conftest.py
+  test_auth.py
+  test_items.py
+
+## Notes
+- Database files are ignored using `.gitignore`
+- Authentication uses JWT
+- Item access is restricted by owner
