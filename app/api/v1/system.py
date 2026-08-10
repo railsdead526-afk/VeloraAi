@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.schemas.message import MessageRequest, GreetRequest, GreetResponse
+from app.schemas.system import MessageRequest, GreetRequest, GreetResponse
 
 router = APIRouter(tags=["System"])
 
@@ -49,4 +49,3 @@ def search(q: str | None = None, limit: int = 10):
         "limit": limit,
         "results": []
     }
-

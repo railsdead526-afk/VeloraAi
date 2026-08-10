@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.token import Token
@@ -39,6 +39,17 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         "token_type": "bearer",
     }
 
+
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user=Depends(get_current_user)):
+    return current_user
+
+
+@router.get("/premium-only", response_model=UserResponse)
+def premium_only(current_user=Depends(require_roles("premium", "admin"))):
+    return current_user
+
+
+@router.get("/admin-only", response_model=UserResponse)
+def admin_only(current_user=Depends(require_roles("admin"))):
     return current_user

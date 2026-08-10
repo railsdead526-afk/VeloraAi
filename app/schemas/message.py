@@ -1,15 +1,24 @@
-from pydantic import BaseModel, Field
+from datetime import datetime
+from pydantic import BaseModel
 
 
-class MessageRequest(BaseModel):
-    message: str = Field(..., min_length=3)
+class MessageCreate(BaseModel):
+    content: str
 
 
-class GreetRequest(BaseModel):
-    name: str = Field(..., min_length=2)
-    message: str = Field(..., min_length=3)
+class MessageResponse(BaseModel):
+    id: int
+    conversation_id: int
+    role: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
 
 
-class GreetResponse(BaseModel):
-    reply: str
+class ChatReplyResponse(BaseModel):
+    user_message: MessageResponse
+    assistant_message: MessageResponse
 

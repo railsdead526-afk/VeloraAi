@@ -13,5 +13,4 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     role = Column(String, nullable=False, default="free")
 
-    items = relationship("Item", back_populates="owner", cascade="all, delete-orphan")
-
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete")
