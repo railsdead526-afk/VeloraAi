@@ -30,6 +30,13 @@ from app.tools.providers import (
     supabase_list_projects,
     vercel_list_projects,
 )
+from app.tools.supabase_tools import (
+    supabase_execute_sql,
+    supabase_get_advisors,
+    supabase_get_project,
+    supabase_list_branches,
+    supabase_list_edge_functions,
+)
 from app.tools.terminal import terminal_exec
 
 
@@ -67,7 +74,14 @@ def register_platform_tools(registry) -> None:
         ToolDefinition(name="railway_restart_service", description="Restart a Railway service instance.", handler=railway_restart_service, allowed_plans=WRITE_PLANS, parameters={"type":"object","properties":{"service_id":{"type":"string"}},"required":["service_id"],"additionalProperties":False}, requires_confirmation=True, timeout_seconds=30, max_calls_per_request=2),
 
         ToolDefinition(name="cloudflare_list_zones", description="List Cloudflare zones for the authenticated account.", handler=cloudflare_list_zones, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{},"additionalProperties":False}, timeout_seconds=15, max_calls_per_request=3),
+
         ToolDefinition(name="supabase_list_projects", description="List Supabase projects for the authenticated account.", handler=supabase_list_projects, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{},"additionalProperties":False}, timeout_seconds=15, max_calls_per_request=3),
+        ToolDefinition(name="supabase_get_project", description="Get details for a Supabase project.", handler=supabase_get_project, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{"project_id":{"type":"string"}},"required":["project_id"],"additionalProperties":False}, timeout_seconds=15, max_calls_per_request=5),
+        ToolDefinition(name="supabase_list_branches", description="List development branches for a Supabase project.", handler=supabase_list_branches, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{"project_id":{"type":"string"}},"required":["project_id"],"additionalProperties":False}, timeout_seconds=15, max_calls_per_request=5),
+        ToolDefinition(name="supabase_list_edge_functions", description="List Edge Functions for a Supabase project.", handler=supabase_list_edge_functions, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{"project_id":{"type":"string"}},"required":["project_id"],"additionalProperties":False}, timeout_seconds=15, max_calls_per_request=5),
+        ToolDefinition(name="supabase_get_advisors", description="Read Supabase security or performance advisor findings.", handler=supabase_get_advisors, allowed_plans=READ_PLANS, parameters={"type":"object","properties":{"project_id":{"type":"string"},"type":{"type":"string","enum":["security","performance"]}},"required":["project_id","type"],"additionalProperties":False}, timeout_seconds=20, max_calls_per_request=3),
+        ToolDefinition(name="supabase_execute_sql", description="Execute SQL against a Supabase Postgres project. Treat as high-risk database access.", handler=supabase_execute_sql, allowed_plans=WRITE_PLANS, parameters={"type":"object","properties":{"project_id":{"type":"string"},"query":{"type":"string"}},"required":["project_id","query"],"additionalProperties":False}, requires_confirmation=True, timeout_seconds=30, max_calls_per_request=2),
+
         ToolDefinition(name="terminal_exec", description="Execute a command inside the configured isolated terminal sandbox.", handler=terminal_exec, allowed_plans=TERMINAL_PLANS, parameters={"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout":{"type":"integer","minimum":1,"maximum":60}},"required":["command"],"additionalProperties":False}, requires_confirmation=True, timeout_seconds=65, max_calls_per_request=3),
     ]
 
