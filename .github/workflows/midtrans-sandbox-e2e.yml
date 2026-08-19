@@ -1,0 +1,36 @@
+name: Midtrans Sandbox E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox-e2e:
+    if: ${{ secrets.MIDTRANS_SERVER_KEY != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      APP_DEBUG: "false"
+      DATABASE_URL: sqlite:///./test.db
+      SECRET_KEY: ci-midtrans-e2e-secret-key-012345678901234567890123
+      AI_PROVIDER: mock
+      RATE_LIMIT_STORAGE_URI: memory://
+      CORS_ORIGINS: http://localhost:3000
+      MIDTRANS_SERVER_KEY: ${{ secrets.MIDTRANS_SERVER_KEY }}
+      MIDTRANS_IS_PRODUCTION: "false"
+      RUN_MIDTRANS_SANDBOX_E2E: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Run Midtrans Sandbox E2E
+        run: pytest -q tests/test_midtrans_sandbox_e2e.py -m midtrans_e2e
