@@ -54,21 +54,11 @@ async def observability(request: Request, call_next):
         response = await call_next(request)
     except Exception:
         duration_ms = int((time.perf_counter() - started) * 1000)
-        log_request(
-            method=request.method,
-            path=request.url.path,
-            status_code=500,
-            duration_ms=duration_ms,
-        )
+        log_request(method=request.method, path=request.url.path, status_code=500, duration_ms=duration_ms)
         raise
     duration_ms = int((time.perf_counter() - started) * 1000)
     response.headers["X-Request-ID"] = request_id
-    log_request(
-        method=request.method,
-        path=request.url.path,
-        status_code=response.status_code,
-        duration_ms=duration_ms,
-    )
+    log_request(method=request.method, path=request.url.path, status_code=response.status_code, duration_ms=duration_ms)
     return response
 
 
