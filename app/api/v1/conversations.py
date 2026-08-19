@@ -19,11 +19,13 @@ from app.crud.conversation import (
     update_conversation_title,
 )
 from app.crud.message import create_message, get_messages_by_conversation
+from app.models.document import Document
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
 from app.services.ai_tool_loop import generate_ai_reply_with_tools
 from app.services.quota_service import QuotaExceededError, enforce_plan_quota
+from app.services.rag_service import RAGError, build_context, retrieve_chunks
 from app.tools.bootstrap import get_registry
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -41,6 +43,39 @@ def enforce_user_plan_quota(db: Session, user) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=str(exc),
         ) from exc
+
+
+def _history_with_rag_context(db: Session, *, user_id: int, history_payload: list[dict], query: str, use_rag: bool) -> list[dict]:
+    if not use_rag:
+        return history_payload
+
+    has_documents = (
+        db.query(Document.id)
+        .filter(Document.user_id == user_id, Document.status == "ready")
+        .first()
+        is not None
+    )
+    if not has_documents:
+        return history_payload
+
+    try:
+        results = retrieve_chunks(db, user_id=user_id, query=query, limit=5)
+    except RAGError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG retrieval is temporarily unavailable",
+        ) from exc
+
+    context = build_context(results)
+    if not context:
+        return history_payload
+
+    rag_instruction = (
+        "Use the following user-owned document context when it is relevant to the user's request. "
+        "Do not claim facts from the context that are not present. If the context is insufficient, say so.\n\n"
+        f"{context}"
+    )
+    return [{"role": "system", "content": rag_instruction}, *history_payload]
 
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -88,6 +123,13 @@ def send_message(conversation_id: int, payload: MessageCreate, db: Session = Dep
     user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
     history = get_messages_by_conversation(db, conversation_id)
     history_payload = [{"role": message.role, "content": message.content} for message in history]
+    history_payload = _history_with_rag_context(
+        db,
+        user_id=current_user.id,
+        history_payload=history_payload,
+        query=payload.content,
+        use_rag=payload.use_rag,
+    )
 
     try:
         if settings.ai_provider in {"openai", "llama"}:
@@ -139,6 +181,13 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
     history = get_messages_by_conversation(db, conversation_id)
     history_payload = [{"role": message.role, "content": message.content} for message in history]
+    history_payload = _history_with_rag_context(
+        db,
+        user_id=current_user.id,
+        history_payload=history_payload,
+        query=payload.content,
+        use_rag=payload.use_rag,
+    )
     usage = {}
     user_id = current_user.id
 
