@@ -13,27 +13,26 @@ def generate_conversation_title(content: str, max_length: int = 40) -> str:
     return text[:max_length].rstrip() + "..."
 
 
-def create_message(db: Session, conversation_id: int, role: str, content: str):
+def create_message(
+    db: Session,
+    conversation_id: int,
+    role: str,
+    content: str,
+    *,
+    commit: bool = True,
+):
     existing_user_message = (
         db.query(Message)
         .filter(
             Message.conversation_id == conversation_id,
-            Message.role == "user"
+            Message.role == "user",
         )
         .first()
     )
 
-    conversation = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-    )
+    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
 
-    message = Message(
-        conversation_id=conversation_id,
-        role=role,
-        content=content
-    )
+    message = Message(conversation_id=conversation_id, role=role, content=content)
     db.add(message)
 
     if (
@@ -44,8 +43,12 @@ def create_message(db: Session, conversation_id: int, role: str, content: str):
     ):
         conversation.title = generate_conversation_title(content)
 
-    db.commit()
-    db.refresh(message)
+    if commit:
+        db.commit()
+        db.refresh(message)
+    else:
+        db.flush()
+
     return message
 
 
@@ -56,4 +59,3 @@ def get_messages_by_conversation(db: Session, conversation_id: int):
         .order_by(Message.id.asc())
         .all()
     )
-
