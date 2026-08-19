@@ -29,6 +29,8 @@ class Settings:
     ai_max_history_messages = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "30"))
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
 
+    document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
     rate_limit_default = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
     rate_limit_auth = os.getenv("RATE_LIMIT_AUTH", "10/minute")
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
@@ -50,6 +52,8 @@ class Settings:
             raise RuntimeError("AI_MAX_RETRIES must be between 0 and 5")
         if self.embedding_dimensions < 1:
             raise RuntimeError("EMBEDDING_DIMENSIONS must be greater than zero")
+        if self.document_max_upload_bytes < 1024:
+            raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
