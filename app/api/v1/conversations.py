@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -5,12 +6,18 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
-from app.crud.ai_usage import record_ai_usage
-from app.crud.conversation import create_conversation, delete_conversation, get_conversation_by_id, get_user_conversations, update_conversation_title
+from app.core.config import settings
+from app.crud.conversation import (
+    create_conversation,
+    delete_conversation,
+    get_conversation_by_id,
+    get_user_conversations,
+    update_conversation_title,
+)
 from app.crud.message import create_message, get_messages_by_conversation
+from app.crud.ai_usage import record_ai_usage
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
@@ -54,8 +61,7 @@ def list_conversation_messages(conversation_id: int, db: Session = Depends(get_d
 
 
 @router.post("/{conversation_id}/messages", response_model=ChatReplyResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit(settings.rate_limit_chat)
-def send_message(request: Request, conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def send_message(conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -69,7 +75,16 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
         assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=assistant_reply, commit=False)
         input_tokens = max(1, sum(len(item["content"]) for item in history_payload) // 4)
         output_tokens = max(1, len(assistant_reply) // 4)
-        record_ai_usage(db, user_id=current_user.id, conversation_id=conversation_id, provider=settings.ai_provider, model=settings.openai_model if settings.ai_provider == "openai" else "mock", input_tokens=input_tokens, output_tokens=output_tokens, commit=False)
+        record_ai_usage(
+            db,
+            user_id=current_user.id,
+            conversation_id=conversation_id,
+            provider=settings.ai_provider,
+            model=settings.openai_model if settings.ai_provider == "openai" else "mock",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            commit=False,
+        )
         db.commit()
         db.refresh(user_message)
         db.refresh(assistant_message)
@@ -115,6 +130,9 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
             db.refresh(user_message)
             db.refresh(assistant_message)
             yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_message.id}, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            db.rollback()
+            raise
         except RuntimeError as exc:
             db.rollback()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
@@ -125,5 +143,10 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
