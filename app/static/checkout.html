@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VeloraAi Checkout</title>
+  <link rel="stylesheet" href="/static/checkout.css">
+</head>
+<body>
+  <main class="checkout-shell">
+    <section class="hero">
+      <span class="eyebrow">VELORAAI PREMIUM</span>
+      <h1>Upgrade your AI workspace.</h1>
+      <p>Choose the plan that fits your workflow. Payment is processed securely by Midtrans.</p>
+    </section>
+
+    <section class="plans" aria-label="Plans">
+      <article class="plan-card" data-plan="pro">
+        <div class="plan-top"><span>PRO</span><span class="badge">POPULAR</span></div>
+        <h2 id="pro-price">Configured in admin</h2>
+        <p>Higher AI limits, advanced tools, and RAG capabilities.</p>
+        <button class="checkout-button" data-plan="pro">Continue with Pro</button>
+      </article>
+      <article class="plan-card featured" data-plan="max">
+        <div class="plan-top"><span>MAX</span><span class="badge">POWER</span></div>
+        <h2 id="max-price">Configured in admin</h2>
+        <p>Maximum limits, full agent tooling, and priority capabilities.</p>
+        <button class="checkout-button" data-plan="max">Continue with Max</button>
+      </article>
+    </section>
+
+    <p id="status" class="status" role="status"></p>
+  </main>
+
+  <script src="/api/v1/payments/snap-script.js"></script>
+  <script src="/static/checkout.js"></script>
+</body>
+</html>
