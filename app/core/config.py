@@ -21,6 +21,10 @@ class Settings:
     llama_api_key = os.getenv("LLAMA_API_KEY", "")
     llama_model = os.getenv("LLAMA_MODEL", "Llama-3.1-8B-Instruct")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "").rstrip("/")
+    embedding_api_key = os.getenv("EMBEDDING_API_KEY", "")
+    embedding_dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
     ai_timeout_seconds = float(os.getenv("AI_TIMEOUT_SECONDS", "45"))
     ai_max_history_messages = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "30"))
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
@@ -44,6 +48,8 @@ class Settings:
             raise RuntimeError("AI_TIMEOUT_SECONDS must be greater than zero")
         if self.ai_max_retries < 0 or self.ai_max_retries > 5:
             raise RuntimeError("AI_MAX_RETRIES must be between 0 and 5")
+        if self.embedding_dimensions < 1:
+            raise RuntimeError("EMBEDDING_DIMENSIONS must be greater than zero")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
