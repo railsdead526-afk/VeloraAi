@@ -23,6 +23,9 @@ class Document(Base):
     status = Column(String(30), nullable=False, default="ready")
     content_hash = Column(String(64), nullable=False, index=True)
     raw_text = Column(Text, nullable=False)
+    indexing_attempts = Column(Integer, nullable=False, default=0, server_default="0")
+    last_index_error = Column(String(255), nullable=True)
+    last_indexed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
