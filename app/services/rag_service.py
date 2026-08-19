@@ -99,7 +99,7 @@ def _get_document(db: Session, *, user_id: int, document_id: int) -> Document:
     return document
 
 
-def ingest_text(
+def create_pending_document(
     db: Session,
     *,
     user_id: int,
@@ -118,49 +118,60 @@ def ingest_text(
     if existing:
         raise DuplicateDocumentError(existing.id)
 
-    chunks = chunk_text(normalized)
-    if not chunks:
-        raise RAGError("Document text is empty")
-    embeddings = embed_texts(chunks)
     document = Document(
         user_id=user_id,
         name=name.strip()[:255],
         source=source,
         mime_type=mime_type,
-        status="ready",
+        status="queued",
         content_hash=digest,
         raw_text=normalized,
     )
     db.add(document)
-    db.flush()
-    for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
-        db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
     db.commit()
     db.refresh(document)
     return document
 
 
-def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
-    document = _get_document(db, user_id=user_id, document_id=document_id)
-    normalized = normalize_text(document.raw_text)
-    if not normalized:
-        raise RAGError("Document has no source text to re-index")
-    chunks = chunk_text(normalized)
-    if not chunks:
-        raise RAGError("Document text is empty")
+def ingest_text(
+    db: Session,
+    *,
+    user_id: int,
+    name: str,
+    text: str,
+    source: str = "text",
+    mime_type: str | None = "text/plain",
+) -> Document:
+    document = create_pending_document(
+        db,
+        user_id=user_id,
+        name=name,
+        text=text,
+        source=source,
+        mime_type=mime_type,
+    )
     try:
+        chunks = chunk_text(document.raw_text)
         embeddings = embed_texts(chunks)
-        document.status = "ready"
-        document.content_hash = content_hash(normalized)
-        db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete(synchronize_session=False)
         for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
             db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
+        document.status = "ready"
         db.commit()
         db.refresh(document)
         return document
     except Exception:
         db.rollback()
+        document = _get_document(db, user_id=user_id, document_id=document.id)
+        document.status = "failed"
+        db.commit()
         raise
+
+
+def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
+    document = _get_document(db, user_id=user_id, document_id=document_id)
+    document.status = "queued"
+    db.commit()
+    return document
 
 
 def delete_document(db: Session, *, user_id: int, document_id: int) -> None:
