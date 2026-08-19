@@ -19,6 +19,10 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
 
 class DocumentSearchRequest(BaseModel):
     query: str = Field(min_length=1)
