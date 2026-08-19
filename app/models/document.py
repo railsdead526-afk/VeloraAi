@@ -6,6 +6,7 @@ from app.core.database import Base
 
 
 EMBEDDING_DIMENSIONS = 1536
+EMBEDDING_TYPE = Vector(EMBEDDING_DIMENSIONS).with_variant(Text(), "sqlite")
 
 
 class Document(Base):
@@ -31,7 +32,7 @@ class DocumentChunk(Base):
     document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    embedding = Column(EMBEDDING_TYPE, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     document = relationship("Document", back_populates="chunks")
