@@ -1,9 +1,12 @@
 import asyncio
+import json
 
 import httpx
 import pytest
 
 from app.services import ai_tool_loop
+from app.tools.base import ToolDefinition
+from app.tools.registry import ToolRegistry
 
 
 class FakeResponse:
@@ -52,3 +55,74 @@ def test_async_provider_retry_does_not_retry_non_retryable_4xx(monkeypatch):
 
     asyncio.run(run())
     assert attempts["count"] == 1
+
+
+def test_async_provider_cancellation_is_not_swallowed():
+    class Client:
+        async def post(self, *args, **kwargs):
+            raise asyncio.CancelledError()
+
+    async def run():
+        with pytest.raises(asyncio.CancelledError):
+            await ai_tool_loop._post_completion_async(Client(), "https://example.test/chat/completions", headers={}, payload={})
+
+    asyncio.run(run())
+
+
+def test_async_tool_loop_exhausts_round_budget(monkeypatch):
+    monkeypatch.setattr(ai_tool_loop.settings, "ai_provider", "openai")
+    monkeypatch.setattr(ai_tool_loop.settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(ai_tool_loop.settings, "openai_base_url", "https://example.test/v1")
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="echo",
+            description="Echo",
+            handler=lambda arguments: {"ok": True},
+            allowed_plans=frozenset({"pro"}),
+            parameters={"type": "object", "additionalProperties": True},
+            timeout_seconds=5,
+            max_calls_per_request=10,
+        )
+    )
+
+    payload = {
+        "choices": [{
+            "message": {
+                "content": None,
+                "tool_calls": [{
+                    "id": "call-1",
+                    "function": {"name": "echo", "arguments": json.dumps({})},
+                }],
+            }
+        }],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+
+    class Client:
+        async def post(self, *args, **kwargs):
+            return FakeResponse(payload=payload)
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *args, **kwargs: _AsyncClientContext(Client()))
+
+    async def run():
+        with pytest.raises(RuntimeError, match="maximum number of rounds"):
+            await ai_tool_loop.generate_ai_reply_with_tools_async(
+                [{"role": "user", "content": "use echo"}],
+                plan="pro",
+                registry=registry,
+            )
+
+    asyncio.run(run())
+
+
+class _AsyncClientContext:
+    def __init__(self, client):
+        self.client = client
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
