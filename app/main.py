@@ -9,12 +9,14 @@ from slowapi import _rate_limit_exceeded_handler
 from app.api.v1 import auth, system, conversations
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.tools.catalog import register_builtin_tools
 
 logger = logging.getLogger("veloraai")
 
 app = FastAPI(title=settings.app_name)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+register_builtin_tools()
 
 if settings.cors_origins:
     app.add_middleware(
