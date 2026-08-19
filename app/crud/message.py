@@ -52,10 +52,17 @@ def create_message(
     return message
 
 
-def get_messages_by_conversation(db: Session, conversation_id: int):
+def get_messages_by_conversation(
+    db: Session,
+    conversation_id: int,
+    limit: int = 100,
+    offset: int = 0,
+):
     return (
         db.query(Message)
         .filter(Message.conversation_id == conversation_id)
-        .order_by(Message.id.asc())
+        .order_by(Message.id.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
