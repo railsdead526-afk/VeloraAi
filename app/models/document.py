@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 
@@ -11,6 +11,9 @@ EMBEDDING_TYPE = Vector(EMBEDDING_DIMENSIONS).with_variant(Text(), "sqlite")
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "content_hash", name="uq_documents_user_content_hash"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -18,6 +21,8 @@ class Document(Base):
     source = Column(String(50), nullable=False, default="text")
     mime_type = Column(String(100), nullable=True)
     status = Column(String(30), nullable=False, default="ready")
+    content_hash = Column(String(64), nullable=False, index=True)
+    raw_text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
