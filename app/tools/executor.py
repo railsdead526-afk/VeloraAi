@@ -32,10 +32,17 @@ async def execute_tool(
     counts[name] = used + 1
 
     try:
-        result = tool.handler(arguments)
-        if inspect.isawaitable(result):
-            return await asyncio.wait_for(result, timeout=tool.timeout_seconds)
-        return await asyncio.wait_for(asyncio.to_thread(lambda: result), timeout=tool.timeout_seconds)
+        if inspect.iscoroutinefunction(tool.handler):
+            result = await asyncio.wait_for(
+                tool.handler(arguments),
+                timeout=tool.timeout_seconds,
+            )
+        else:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(tool.handler, arguments),
+                timeout=tool.timeout_seconds,
+            )
+        return result
     except asyncio.TimeoutError as exc:
         raise ToolExecutionError("Tool execution timed out") from exc
     except ToolExecutionError:
