@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -7,6 +9,7 @@ from app.core.database import get_db
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
 from app.services.document_ingestion import DocumentExtractionError, extract_text
+from app.services.embedding_usage_service import embedding_usage_summary
 from app.services.rag_jobs import process_document_index
 from app.services.rag_service import DuplicateDocumentError, RAGError, create_pending_document, delete_document, reindex_document, retrieve_chunks
 
@@ -77,6 +80,12 @@ def list_documents(db: Session = Depends(get_db), current_user=Depends(get_curre
         .order_by(Document.created_at.desc())
         .all()
     )
+
+
+@router.get("/usage")
+def get_embedding_usage(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    since = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return embedding_usage_summary(db, user_id=current_user.id, since=since)
 
 
 @router.post("/documents/{document_id}/reindex", response_model=DocumentResponse)
