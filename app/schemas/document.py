@@ -16,6 +16,9 @@ class DocumentResponse(BaseModel):
     source: str
     mime_type: str | None
     status: str
+    indexing_attempts: int
+    last_index_error: str | None
+    last_indexed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
