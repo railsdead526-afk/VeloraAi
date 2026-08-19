@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.document import Document, DocumentChunk, EMBEDDING_DIMENSIONS
+from app.services.embedding_usage_service import record_embedding_usage
 
 
 class RAGError(RuntimeError):
@@ -185,6 +186,7 @@ def ingest_text(
 def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
     document = _get_document(db, user_id=user_id, document_id=document_id)
     document.status = "queued"
+    document.last_index_error = None
     db.commit()
     return document
 
@@ -238,8 +240,39 @@ def hybrid_retrieve_chunks(
     limit = min(max(limit, 1), 20)
     candidate_limit = min(max(candidate_limit, limit), 50)
 
-    query_embedding = embed_texts([query])[0]
-    vector_rows = _vector_candidates(db, user_id=user_id, query_embedding=query_embedding, candidate_limit=candidate_limit)
+    try:
+        query_embedding, embedding_meta = embed_texts([query], return_metadata=True)
+        vector = query_embedding[0]
+        record_embedding_usage(
+            db,
+            user_id=user_id,
+            document_id=None,
+            provider=embedding_meta["provider"],
+            model=embedding_meta["model"],
+            input_tokens=embedding_meta["input_tokens"],
+            item_count=1,
+            status="success",
+            commit=True,
+        )
+    except Exception as exc:
+        try:
+            db.rollback()
+            record_embedding_usage(
+                db,
+                user_id=user_id,
+                document_id=None,
+                provider=settings.ai_provider,
+                model=settings.embedding_model,
+                item_count=1,
+                status="failed",
+                error_type=type(exc).__name__,
+                commit=True,
+            )
+        except Exception:
+            db.rollback()
+        raise
+
+    vector_rows = _vector_candidates(db, user_id=user_id, query_embedding=vector, candidate_limit=candidate_limit)
     keyword_rows = _keyword_candidates(db, user_id=user_id, query=query, candidate_limit=candidate_limit)
 
     fused: dict[int, float] = {}
