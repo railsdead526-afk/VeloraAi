@@ -122,7 +122,7 @@ def _mock_result(messages: list[dict]) -> AIResult:
     else:
         reply = f"Halo, saya menerima pesanmu: {current_message}"
 
-    return AIResult(reply, max(1, sum(len(item["content"]) for item in messages) // 4), max(1, len(reply) // 4), "mock")
+    return AIResult(reply, max(1, sum(len(item.get("content", "")) for item in messages) // 4), max(1, len(reply) // 4), "mock")
 
 
 def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
@@ -133,13 +133,25 @@ def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
     raise RuntimeError("AI provider is not configured")
 
 
-async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[str]:
+async def stream_ai_reply_from_history(
+    messages: list[dict],
+    usage_sink: Optional[dict] = None,
+) -> AsyncIterator[str]:
+    if usage_sink is not None:
+        usage_sink.update({"input_tokens": None, "output_tokens": None, "model": "mock"})
+
     if not messages:
         yield "Halo, ada yang bisa saya bantu?"
         return
 
     if settings.ai_provider == "mock":
         result = _mock_result(messages)
+        if usage_sink is not None:
+            usage_sink.update({
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "model": result.model,
+            })
         words = result.content.split(" ")
         for index, word in enumerate(words):
             yield word if index == 0 else f" {word}"
@@ -186,8 +198,14 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
                             data = json.loads(payload)
                         except json.JSONDecodeError:
                             continue
-                        usage = data.get("usage") or {}
-                        if usage:
+                        input_tokens, output_tokens = _parse_usage(data)
+                        if input_tokens is not None and output_tokens is not None:
+                            if usage_sink is not None:
+                                usage_sink.update({
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                    "model": settings.openai_model,
+                                })
                             continue
                         choices = data.get("choices") or []
                         if not choices:
