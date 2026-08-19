@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
+from app.core.rate_limit import limiter
+from app.core.config import settings
 from app.schemas.user import UserCreate, UserLogin, UserResponse
 from app.schemas.token import Token
 from app.crud.user import get_user_by_email, create_user, authenticate_user
@@ -12,7 +14,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_in: UserCreate, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_auth)
+def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
     existing_user = get_user_by_email(db, user_in.email)
     if existing_user:
         raise HTTPException(
@@ -24,7 +27,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(user_in: UserLogin, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_auth)
+def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
     user = authenticate_user(db, user_in.email, user_in.password)
     if not user:
         raise HTTPException(
