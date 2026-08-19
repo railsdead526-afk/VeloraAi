@@ -9,10 +9,12 @@ from app.core.config import settings
 from app.services.ai_service import AIResult, _build_api_messages, _parse_usage, _provider_config
 from app.tools.executor import ToolExecutionError, execute_tool
 from app.tools.registry import ToolRegistry
+from app.tools.selector import select_tools
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 4
+MAX_TOOLS_PER_REQUEST = 12
 
 
 def _tool_message(tool_call_id: str, result: Any) -> dict[str, str]:
@@ -63,6 +65,13 @@ def generate_ai_reply_with_tools(
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     api_messages = _build_api_messages(messages)
+    selected_tools = select_tools(
+        registry.list(),
+        messages[-1].get("content", "") if messages else "",
+        plan=plan,
+        max_tools=MAX_TOOLS_PER_REQUEST,
+    )
+    selected_names = {tool.name for tool in selected_tools}
     total_input_tokens = 0
     total_output_tokens = 0
     usage_seen = False
@@ -77,7 +86,7 @@ def generate_ai_reply_with_tools(
             "model": model,
             "messages": api_messages,
             "temperature": 0.7,
-            "tools": registry.schemas(),
+            "tools": registry.schemas_for(selected_tools),
             "tool_choice": "auto",
         }
         try:
@@ -125,6 +134,10 @@ def generate_ai_reply_with_tools(
             tool_call_id = tool_call.get("id")
             if not name or not tool_call_id:
                 raise RuntimeError("AI provider returned an invalid tool call")
+            if name not in selected_names:
+                result = {"error": "Tool is not available in the current tool context"}
+                api_messages.append(_tool_message(tool_call_id, result))
+                continue
             try:
                 arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
                 if not isinstance(arguments, dict):
