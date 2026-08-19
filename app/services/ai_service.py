@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import time
@@ -119,6 +120,7 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
 
     last_error = None
     for attempt in range(settings.ai_max_retries + 1):
+        streamed_content = False
         try:
             timeout = httpx.Timeout(settings.ai_timeout_seconds)
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -157,11 +159,14 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
                         delta = choices[0].get("delta") or {}
                         content = delta.get("content")
                         if content:
+                            streamed_content = True
                             yield content
                     return
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             last_error = exc
             logger.exception("AI streaming request failed on attempt %s", attempt + 1)
+            if streamed_content:
+                break
             if attempt < settings.ai_max_retries:
                 await _async_backoff(attempt)
                 continue
@@ -171,6 +176,4 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
 
 
 async def _async_backoff(attempt: int) -> None:
-    import asyncio
-
     await asyncio.sleep(min(2 ** attempt, 4))
