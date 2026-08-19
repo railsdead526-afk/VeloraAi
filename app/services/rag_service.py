@@ -63,10 +63,15 @@ def _embedding_config() -> tuple[str, str, str]:
     return base_url.rstrip("/"), api_key, model
 
 
-def embed_texts(texts: Iterable[str]) -> list[list[float]]:
+def embed_texts(texts: Iterable[str], *, return_metadata: bool = False):
     items = [text for text in texts if text.strip()]
     if not items:
-        return []
+        empty_metadata = {
+            "provider": settings.ai_provider,
+            "model": settings.embedding_model,
+            "input_tokens": 0,
+        }
+        return ([], empty_metadata) if return_metadata else []
     base_url, api_key, model = _embedding_config()
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -80,14 +85,24 @@ def embed_texts(texts: Iterable[str]) -> list[list[float]]:
         )
         response.raise_for_status()
         data = response.json()
-        embeddings = [item["embedding"] for item in sorted(data.get("data", []), key=lambda item: item.get("index", 0))]
+        embeddings = [
+            item["embedding"]
+            for item in sorted(data.get("data", []), key=lambda item: item.get("index", 0))
+        ]
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         raise RAGError("Embedding provider request failed") from exc
     if len(embeddings) != len(items):
         raise RAGError("Embedding provider returned an incomplete response")
     if any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
         raise RAGError(f"Embedding dimensions must be {EMBEDDING_DIMENSIONS}")
-    return embeddings
+
+    usage = data.get("usage") or {}
+    metadata = {
+        "provider": settings.ai_provider,
+        "model": model,
+        "input_tokens": int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0),
+    }
+    return (embeddings, metadata) if return_metadata else embeddings
 
 
 def _get_document(db: Session, *, user_id: int, document_id: int) -> Document:
