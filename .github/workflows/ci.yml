@@ -14,13 +14,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run tests
+      - name: Validate Alembic migrations
         env:
           APP_ENV: test
           APP_DEBUG: "false"
           DATABASE_URL: sqlite:///./test.db
           SECRET_KEY: test-secret-key
           AI_PROVIDER: mock
-        run: pytest -q
+        run: alembic upgrade head
+      - name: Run tests with coverage
+        env:
+          APP_ENV: test
+          APP_DEBUG: "false"
+          DATABASE_URL: sqlite:///./test.db
+          SECRET_KEY: test-secret-key
+          AI_PROVIDER: mock
+        run: pytest -q --cov=app --cov-report=term-missing
