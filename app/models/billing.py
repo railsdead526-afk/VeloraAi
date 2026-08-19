@@ -40,6 +40,7 @@ class Payment(Base):
     provider = Column(String(30), nullable=False)
     provider_order_id = Column(String(255), nullable=False, index=True)
     provider_transaction_id = Column(String(255), nullable=True, index=True)
+    snap_token = Column(String(255), nullable=True, index=True)
     amount = Column(BigInteger, nullable=False)
     currency = Column(String(10), nullable=False, default="IDR")
     plan = Column(String(20), nullable=False)
