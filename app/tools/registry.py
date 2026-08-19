@@ -28,12 +28,18 @@ class ToolRegistry:
     def schemas(self) -> list[dict[str, Any]]:
         return [
             {
-                "name": tool.name,
-                "description": tool.description,
-                "requires_confirmation": tool.requires_confirmation,
-                "timeout_seconds": tool.timeout_seconds,
-                "max_calls_per_request": tool.max_calls_per_request,
-                "allowed_plans": sorted(tool.allowed_plans),
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                },
+                "x-velora": {
+                    "requires_confirmation": tool.requires_confirmation,
+                    "timeout_seconds": tool.timeout_seconds,
+                    "max_calls_per_request": tool.max_calls_per_request,
+                    "allowed_plans": sorted(tool.allowed_plans),
+                },
             }
             for tool in self._tools.values()
         ]
