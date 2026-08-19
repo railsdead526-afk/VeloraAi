@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -92,6 +94,8 @@ async def _post_completion_async(client: httpx.AsyncClient, url: str, *, headers
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             return response.json()
+        except asyncio.CancelledError:
+            raise
         except (httpx.HTTPError, ValueError) as exc:
             if attempt >= attempts - 1 or not _is_retryable_http_error(exc):
                 raise
@@ -217,7 +221,7 @@ async def generate_ai_reply_with_tools_async(
 
     api_key, base_url, model, provider = _provider_config()
     if provider == "openai" and not api_key:
-        raise RuntimeError("AI provider belum dikonfigurasi")
+        raise RuntimeError("AI provider belum dikonfigurasikan")
 
     api_messages = _build_api_messages(messages)
     selected_tools = _selected_tools(registry, messages, plan)
@@ -246,6 +250,8 @@ async def generate_ai_reply_with_tools_async(
                     headers=headers,
                     payload=payload,
                 )
+            except asyncio.CancelledError:
+                raise
             except (httpx.HTTPError, ValueError) as exc:
                 logger.exception("Async AI tool-loop request failed")
                 raise RuntimeError("AI service temporarily unavailable") from exc
@@ -293,6 +299,8 @@ async def generate_ai_reply_with_tools_async(
                             confirmed=confirmed,
                             call_counts=call_counts,
                         )
+                    except asyncio.CancelledError:
+                        raise
                     except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
                         result = {"error": str(exc)}
                 api_messages.append(_tool_message(tool_call_id, result))
