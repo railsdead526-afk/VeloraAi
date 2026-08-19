@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from typing import Any
 
 from app.tools.base import ToolDefinition
@@ -25,7 +26,8 @@ class ToolRegistry:
     def list(self) -> list[ToolDefinition]:
         return list(self._tools.values())
 
-    def schemas(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def schemas_for(tools: Iterable[ToolDefinition]) -> list[dict[str, Any]]:
         return [
             {
                 "type": "function",
@@ -35,8 +37,11 @@ class ToolRegistry:
                     "parameters": tool.parameters,
                 },
             }
-            for tool in self._tools.values()
+            for tool in tools
         ]
+
+    def schemas(self) -> list[dict[str, Any]]:
+        return self.schemas_for(self._tools.values())
 
 
 registry = ToolRegistry()
