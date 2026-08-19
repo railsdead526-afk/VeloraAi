@@ -26,6 +26,7 @@ class Settings:
     rate_limit_auth = os.getenv("RATE_LIMIT_AUTH", "10/minute")
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
     rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+    cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 
     @property
     def is_production(self) -> bool:
@@ -58,6 +59,8 @@ class Settings:
                 raise RuntimeError("OPENAI_API_KEY must be configured when AI_PROVIDER=openai")
             if self.rate_limit_storage_uri == "memory://":
                 raise RuntimeError("RATE_LIMIT_STORAGE_URI must use shared storage in production")
+            if not self.cors_origins:
+                raise RuntimeError("CORS_ORIGINS must be configured in production")
 
 
 settings = Settings()
