@@ -1,48 +1,112 @@
 # VeloraAi
-VeloraAi adalah backend API berbasis FastAPI yang menyediakan fitur autentikasi pengguna dan manajemen item. Project ini menerapkan registrasi, login, JWT authentication, serta operasi CRUD dengan ownership-based access control agar setiap user hanya dapat mengakses item miliknya sendiri. Project juga dilengkapi automated testing menggunakan pytest untuk memastikan setiap fitur berjalan dengan baik.
 
+VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, percakapan, AI chat, streaming response, dan pencatatan penggunaan AI.
 
-Backend API built with FastAPI.
+## Fitur
 
-## Features
-- User registration
-- User login
+- User registration dan login
 - JWT authentication
-- Create, list, get, update, delete items
-- Ownership-based access control
-- Automated tests with pytest
+- Ownership-based conversation access control
+- Conversation CRUD
+- Message history
+- AI chat dengan bounded context
+- AI retry dan timeout
+- Streaming AI melalui Server-Sent Events (SSE)
+- AI usage/token tracking
+- PostgreSQL support
+- Alembic database migrations
+- API rate limiting
+- Production configuration validation
+- Health dan readiness endpoints
+- Automated tests dan GitHub Actions CI
 
 ## Tech Stack
+
 - FastAPI
 - SQLAlchemy
-- SQLite
+- PostgreSQL / SQLite untuk development dan test
+- Alembic
 - Pydantic
+- HTTPX
+- SlowAPI
+- JWT
 - Pytest
 
 ## Setup
+
+```bash
 python -m venv venv
 source venv/bin/activate
 python -m pip install -r requirements.txt
+cp .env.example .env
 uvicorn app.main:app --reload
+```
+
+Untuk production, gunakan PostgreSQL, shared rate-limit storage, `SECRET_KEY` yang kuat, dan konfigurasi AI provider yang valid. Jangan aktifkan debug di production.
+
+## Database Migration
+
+```bash
+alembic upgrade head
+```
+
+Migration membaca `DATABASE_URL` dari environment jika tersedia.
 
 ## Run Tests
-python -m pytest -v
 
-## Project Structure
+```bash
+python -m pytest -v
+```
+
+Dengan coverage:
+
+```bash
+python -m pytest -q --cov=app --cov-report=term-missing
+```
+
+## API Utama
+
+```text
+GET  /api/v1/health
+GET  /api/v1/ready
+
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /api/v1/auth/me
+
+POST   /api/v1/conversations
+GET    /api/v1/conversations
+PATCH  /api/v1/conversations/{conversation_id}
+DELETE /api/v1/conversations/{conversation_id}
+
+GET  /api/v1/conversations/{conversation_id}/messages
+POST /api/v1/conversations/{conversation_id}/messages
+POST /api/v1/conversations/{conversation_id}/messages/stream
+```
+
+## Struktur Project
+
+```text
 app/
   api/
   core/
   crud/
   models/
   schemas/
+  services/
   main.py
 
-tests/
-  conftest.py
-  test_auth.py
-  test_items.py
+alembic/
+  versions/
 
-## Notes
-- Database files are ignored using `.gitignore`
-- Authentication uses JWT
-- Item access is restricted by owner
+tests/
+.github/
+  workflows/
+```
+
+## Catatan
+
+- Database file lokal dan secrets tidak boleh di-commit.
+- Production wajib menggunakan secret dan shared rate-limit storage yang sesuai.
+- Migration dijalankan melalui Alembic, bukan `create_all()` saat startup.
+- Deployment platform belum dikunci. Railway adalah kandidat yang cocok untuk backend FastAPI + PostgreSQL + Redis.
