@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
 
@@ -11,6 +11,7 @@ class ToolDefinition:
     description: str
     handler: ToolHandler
     allowed_plans: frozenset[str]
+    parameters: dict[str, Any] = field(default_factory=lambda: {"type": "object", "properties": {}})
     requires_confirmation: bool = False
     timeout_seconds: float = 10.0
     max_calls_per_request: int = 1
