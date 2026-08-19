@@ -131,7 +131,14 @@ def send_message(
         for message in history
     ]
 
-    assistant_reply = generate_ai_reply_from_history(history_payload)
+    try:
+        assistant_reply = generate_ai_reply_from_history(history_payload)
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
 
     assistant_message = create_message(
         db,
@@ -144,4 +151,3 @@ def send_message(
         "user_message": user_message,
         "assistant_message": assistant_message,
     }
-
