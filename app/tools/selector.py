@@ -25,17 +25,20 @@ def select_tools(
     tools: Iterable[ToolDefinition],
     user_text: str,
     *,
+    plan: str,
     max_tools: int = 12,
 ) -> list[ToolDefinition]:
     """Select a small contextual subset of registered tools for the model."""
     if max_tools < 1:
         return []
 
+    normalized_plan = plan.lower()
+    available = [tool for tool in tools if tool.allows_plan(normalized_plan)]
     normalized = user_text.lower()
     tokens = _tokens(user_text)
     scored: list[tuple[int, int, ToolDefinition]] = []
 
-    for index, tool in enumerate(tools):
+    for index, tool in enumerate(available):
         name_parts = set(tool.name.lower().replace("-", "_").split("_"))
         score = len(tokens & name_parts) * 3
 
@@ -52,9 +55,8 @@ def select_tools(
         if score > 0:
             scored.append((score, -index, tool))
 
-    # Keep a tiny baseline set for generic requests without exposing the whole registry.
     if not scored:
-        scored = [(0, -index, tool) for index, tool in enumerate(tools)]
+        scored = [(0, -index, tool) for index, tool in enumerate(available)]
 
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return [tool for _, _, tool in scored[:max_tools]]
