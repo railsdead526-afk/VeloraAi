@@ -22,23 +22,22 @@ from app.crud.ai_usage import record_ai_usage
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
-from app.services.quota_service import QuotaExceededError, enforce_monthly_token_quota
+from app.services.quota_service import QuotaExceededError, enforce_plan_quota
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 def enforce_user_plan_quota(db: Session, user) -> None:
-    policy = get_plan_policy(getattr(user, "role", None))
     try:
-        enforce_monthly_token_quota(
+        enforce_plan_quota(
             db,
             user_id=user.id,
-            monthly_limit=policy.monthly_token_limit,
+            policy=get_plan_policy(getattr(user, "role", None)),
         )
     except QuotaExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Monthly AI token quota exceeded",
+            detail=str(exc),
         ) from exc
 
 
@@ -99,7 +98,7 @@ def send_message(conversation_id: int, payload: MessageCreate, db: Session = Dep
             db,
             user_id=current_user.id,
             conversation_id=conversation_id,
-            provider=settings.ai_provider,
+            provider="mock" if ai_result.model == "mock" else settings.ai_provider,
             model=ai_result.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -153,7 +152,7 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
                 db,
                 user_id=user_id,
                 conversation_id=conversation_id,
-                provider=settings.ai_provider,
+                provider="mock" if model == "mock" else settings.ai_provider,
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
