@@ -1,14 +1,8 @@
 from fastapi import FastAPI
 
 from app.api.v1 import auth, system, conversations
-from app.core.database import Base, engine
-from app.models.user import User
-from app.models.conversation import Conversation
-from app.models.message import Message
 
 app = FastAPI(title="VeloraAi API")
-
-Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")
