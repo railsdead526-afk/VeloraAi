@@ -11,11 +11,13 @@ def create_conversation(db: Session, user_id: int, title: str = "New Chat"):
     return conversation
 
 
-def get_user_conversations(db: Session, user_id: int):
+def get_user_conversations(db: Session, user_id: int, limit: int = 50, offset: int = 0):
     return (
         db.query(Conversation)
         .filter(Conversation.user_id == user_id)
         .order_by(Conversation.id.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -38,4 +40,3 @@ def update_conversation_title(db: Session, conversation: Conversation, title: st
 def delete_conversation(db: Session, conversation: Conversation):
     db.delete(conversation)
     db.commit()
-
