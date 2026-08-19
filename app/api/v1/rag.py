@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
+from app.services.document_ingestion import DocumentExtractionError, extract_text
 from app.services.rag_service import RAGError, ingest_text, retrieve_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
@@ -21,6 +23,29 @@ def create_document(payload: DocumentCreate, db: Session = Depends(get_db), curr
             source=payload.source,
             mime_type=payload.mime_type,
         )
+    except RAGError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@router.post("/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    try:
+        content = file.file.read(settings.document_max_upload_bytes + 1)
+        if len(content) > settings.document_max_upload_bytes:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Document exceeds the upload size limit")
+        text, mime_type, source = extract_text(file.filename or "document", content)
+        return ingest_text(
+            db,
+            user_id=current_user.id,
+            name=file.filename or "document",
+            text=text,
+            source=source,
+            mime_type=mime_type,
+        )
+    except HTTPException:
+        raise
+    except DocumentExtractionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RAGError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
