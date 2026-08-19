@@ -1,4 +1,4 @@
-from tests.conftest import client
+from tests.conftest import TestingSessionLocal, client
 
 
 def test_register():
@@ -71,3 +71,40 @@ def test_auth_me():
 def test_auth_me_unauthorized():
     response = client.get("/api/v1/auth/me")
     assert response.status_code == 401
+
+
+def test_premium_only_allows_pro_and_denies_free():
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "free-premium@example.com", "password": "12345678"},
+    )
+    free_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "free-premium@example.com", "password": "12345678"},
+    )
+    free_token = free_login.json()["access_token"]
+    assert client.get(
+        "/api/v1/auth/premium-only",
+        headers={"Authorization": f"Bearer {free_token}"},
+    ).status_code == 403
+
+    db = TestingSessionLocal()
+    try:
+        from app.crud.user import get_user_by_email
+        user = get_user_by_email(db, "free-premium@example.com")
+        user.role = "pro"
+        db.commit()
+    finally:
+        db.close()
+
+    pro_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "free-premium@example.com", "password": "12345678"},
+    )
+    pro_token = pro_login.json()["access_token"]
+    response = client.get(
+        "/api/v1/auth/premium-only",
+        headers={"Authorization": f"Bearer {pro_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["role"] == "pro"
