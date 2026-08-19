@@ -18,6 +18,9 @@ class Settings:
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    llama_api_key = os.getenv("LLAMA_API_KEY", "")
+    llama_model = os.getenv("LLAMA_MODEL", "Llama-3.1-8B-Instruct")
+    llama_base_url = os.getenv("LLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
     ai_timeout_seconds = float(os.getenv("AI_TIMEOUT_SECONDS", "45"))
     ai_max_history_messages = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "30"))
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
@@ -41,8 +44,8 @@ class Settings:
             raise RuntimeError("AI_TIMEOUT_SECONDS must be greater than zero")
         if self.ai_max_retries < 0 or self.ai_max_retries > 5:
             raise RuntimeError("AI_MAX_RETRIES must be between 0 and 5")
-        if self.ai_provider not in {"mock", "openai"}:
-            raise RuntimeError("AI_PROVIDER must be either mock or openai")
+        if self.ai_provider not in {"mock", "openai", "llama"}:
+            raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
         if self.is_production:
             if not self.secret_key or self.secret_key == "change-this-secret-key":
@@ -57,6 +60,8 @@ class Settings:
                 raise RuntimeError("Production DATABASE_URL must use PostgreSQL")
             if self.ai_provider == "openai" and not self.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY must be configured when AI_PROVIDER=openai")
+            if self.ai_provider == "llama" and not self.llama_base_url:
+                raise RuntimeError("LLAMA_BASE_URL must be configured when AI_PROVIDER=llama")
             if self.rate_limit_storage_uri == "memory://":
                 raise RuntimeError("RATE_LIMIT_STORAGE_URI must use shared storage in production")
             if not self.cors_origins:
