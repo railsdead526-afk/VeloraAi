@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -10,7 +13,7 @@ from app.crud.conversation import create_conversation, delete_conversation, get_
 from app.crud.message import create_message, get_messages_by_conversation
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
-from app.services.ai_service import generate_ai_reply_from_history
+from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -66,16 +69,7 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
         assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=assistant_reply, commit=False)
         input_tokens = max(1, sum(len(item["content"]) for item in history_payload) // 4)
         output_tokens = max(1, len(assistant_reply) // 4)
-        record_ai_usage(
-            db,
-            user_id=current_user.id,
-            conversation_id=conversation_id,
-            provider=settings.ai_provider,
-            model=settings.openai_model if settings.ai_provider == "openai" else "mock",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            commit=False,
-        )
+        record_ai_usage(db, user_id=current_user.id, conversation_id=conversation_id, provider=settings.ai_provider, model=settings.openai_model if settings.ai_provider == "openai" else "mock", input_tokens=input_tokens, output_tokens=output_tokens, commit=False)
         db.commit()
         db.refresh(user_message)
         db.refresh(assistant_message)
@@ -87,3 +81,49 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to complete the request")
 
     return {"user_message": user_message, "assistant_message": assistant_message}
+
+
+@router.post("/{conversation_id}/messages/stream")
+@limiter.limit(settings.rate_limit_chat)
+def stream_message(request: Request, conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    conversation = get_conversation_by_id(db, conversation_id)
+    if not conversation or conversation.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
+    history = get_messages_by_conversation(db, conversation_id)
+    history_payload = [{"role": message.role, "content": message.content} for message in history]
+    input_tokens = max(1, sum(len(item["content"]) for item in history_payload) // 4)
+    user_id = current_user.id
+    ai_model = settings.openai_model if settings.ai_provider == "openai" else "mock"
+
+    async def event_stream():
+        chunks: list[str] = []
+        try:
+            async for chunk in stream_ai_reply_from_history(history_payload):
+                chunks.append(chunk)
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+            assistant_reply = "".join(chunks).strip()
+            if not assistant_reply:
+                raise RuntimeError("AI provider returned an empty response")
+
+            assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=assistant_reply, commit=False)
+            output_tokens = max(1, len(assistant_reply) // 4)
+            record_ai_usage(db, user_id=user_id, conversation_id=conversation_id, provider=settings.ai_provider, model=ai_model, input_tokens=input_tokens, output_tokens=output_tokens, commit=False)
+            db.commit()
+            db.refresh(user_message)
+            db.refresh(assistant_message)
+            yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_message.id}, ensure_ascii=False)}\n\n"
+        except RuntimeError as exc:
+            db.rollback()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except Exception:
+            db.rollback()
+            yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
