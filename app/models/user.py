@@ -17,3 +17,4 @@ class User(Base):
     role = Column(String, nullable=False, default="free")
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete")
+    documents = relationship("Document", back_populates="user", cascade="all, delete")
