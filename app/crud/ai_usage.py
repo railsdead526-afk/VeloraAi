@@ -12,6 +12,7 @@ def record_ai_usage(
     model: str,
     input_tokens: int,
     output_tokens: int,
+    commit: bool = True,
 ) -> AIUsage:
     usage = AIUsage(
         user_id=user_id,
@@ -23,6 +24,9 @@ def record_ai_usage(
         total_tokens=input_tokens + output_tokens,
     )
     db.add(usage)
-    db.commit()
-    db.refresh(usage)
+    if commit:
+        db.commit()
+        db.refresh(usage)
+    else:
+        db.flush()
     return usage
