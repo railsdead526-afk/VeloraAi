@@ -3,7 +3,6 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -18,8 +17,22 @@ SYSTEM_PROMPT = (
 )
 
 
-@dataclass
-class AIResult:
+class AIResult(str):
+    """String-compatible AI result carrying provider usage metadata."""
+
+    def __new__(
+        cls,
+        content: str,
+        input_tokens: Optional[int],
+        output_tokens: Optional[int],
+        model: str,
+    ):
+        instance = super().__new__(cls, content)
+        instance.input_tokens = input_tokens
+        instance.output_tokens = output_tokens
+        instance.model = model
+        return instance
+
     content: str
     input_tokens: Optional[int]
     output_tokens: Optional[int]
@@ -75,12 +88,7 @@ def _request_openai(messages: list[dict]) -> AIResult:
                 if not content:
                     raise RuntimeError("AI provider returned an empty response")
                 input_tokens, output_tokens = _parse_usage(data)
-                return AIResult(
-                    content=content.strip(),
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    model=settings.openai_model,
-                )
+                return AIResult(content.strip(), input_tokens, output_tokens, settings.openai_model)
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             last_error = exc
             logger.exception("AI provider request failed on attempt %s", attempt + 1)
@@ -122,7 +130,12 @@ def _mock_result(messages: list[dict]) -> AIResult:
     else:
         reply = f"Halo, saya menerima pesanmu: {current_message}"
 
-    return AIResult(reply, max(1, sum(len(item.get("content", "")) for item in messages) // 4), max(1, len(reply) // 4), "mock")
+    return AIResult(
+        reply,
+        max(1, sum(len(item.get("content", "")) for item in messages) // 4),
+        max(1, len(reply) // 4),
+        "mock",
+    )
 
 
 def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
