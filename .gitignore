@@ -13,3 +13,28 @@ htmlcov/
 .env
 .env.*
 !.env.example
+
+# Frontend generated files
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+
+# Frontend local secrets
+web/.env
+web/.env.local
+web/.env.*.local
+
+# Frontend generated files
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+
+# Local Prisma database
+web/prisma/dev.db
+web/prisma/dev.db-journal
+
+web/prisma/dev.json
+
+requirements-termux.txt
