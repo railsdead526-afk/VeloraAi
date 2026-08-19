@@ -58,7 +58,7 @@ def get_messages_by_conversation(
     limit: int = 100,
     offset: int = 0,
 ):
-    return (
+    messages = (
         db.query(Message)
         .filter(Message.conversation_id == conversation_id)
         .order_by(Message.id.desc())
@@ -66,3 +66,4 @@ def get_messages_by_conversation(
         .limit(limit)
         .all()
     )
+    return list(reversed(messages))
