@@ -18,3 +18,5 @@ class User(Base):
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete")
     documents = relationship("Document", back_populates="user", cascade="all, delete")
+    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    payments = relationship("Payment", back_populates="user", cascade="all, delete-orphan")
