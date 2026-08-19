@@ -6,10 +6,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.plans import get_plan_policy
 from app.core.rate_limit import limiter
+from app.crud.ai_usage import record_ai_usage
 from app.crud.conversation import (
     create_conversation,
     delete_conversation,
@@ -18,11 +18,12 @@ from app.crud.conversation import (
     update_conversation_title,
 )
 from app.crud.message import create_message, get_messages_by_conversation
-from app.crud.ai_usage import record_ai_usage
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
+from app.services.ai_tool_loop import generate_ai_reply_with_tools
 from app.services.quota_service import QuotaExceededError, enforce_plan_quota
+from app.tools.runtime import tool_registry
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -88,7 +89,16 @@ def send_message(conversation_id: int, payload: MessageCreate, db: Session = Dep
     history_payload = [{"role": message.role, "content": message.content} for message in history]
 
     try:
-        ai_result = generate_ai_reply_from_history(history_payload)
+        if settings.ai_provider in {"openai", "llama"}:
+            ai_result = generate_ai_reply_with_tools(
+                history_payload,
+                plan=getattr(current_user, "role", "free"),
+                confirmed=payload.confirm_tools,
+                registry=tool_registry,
+            )
+        else:
+            ai_result = generate_ai_reply_from_history(history_payload)
+
         assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=ai_result.content, commit=False)
         input_tokens = ai_result.input_tokens
         output_tokens = ai_result.output_tokens
