@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, status
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -14,19 +16,19 @@ from app.services.midtrans_service import MidtransError, MidtransService
 router = APIRouter(prefix="/payments", tags=["payments"])
 
 
+CHECKOUT_FILE = Path(__file__).resolve().parents[2] / "static" / "checkout.html"
+
+
 def _plan_amount(plan: str) -> int:
     amount = settings.pro_price_idr if plan == "pro" else settings.max_price_idr
     if amount <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Plan pricing is not configured",
-        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Plan pricing is not configured")
     return amount
 
 
 @router.get("/checkout", include_in_schema=False)
 def checkout_page():
-    return FileResponse("app/static/checkout.html")
+    return FileResponse(CHECKOUT_FILE)
 
 
 @router.get("/config")
@@ -60,17 +62,9 @@ def create_payment(
     current_user=Depends(get_current_user),
 ):
     amount = _plan_amount(payload.plan)
-    payment = create_payment_intent(
-        db,
-        user_id=current_user.id,
-        plan=payload.plan,
-        amount=amount,
-        provider="midtrans",
-    )
-
+    payment = create_payment_intent(db, user_id=current_user.id, plan=payload.plan, amount=amount, provider="midtrans")
     try:
-        midtrans = MidtransService()
-        result = midtrans.create_snap_transaction(
+        result = MidtransService().create_snap_transaction(
             order_id=payment.provider_order_id,
             gross_amount=payment.amount,
             customer_email=current_user.email,
@@ -144,7 +138,7 @@ def refund_payment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment provider")
     if payment.status != "settlement":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only settled payments can be refunded")
-    if payment.refund_status == "settlement":
+    if payment.refund_status in {"settlement", "200"}:
         return {"status": "already_refunded", "payment_id": payment.id, "refund_amount": payment.refund_amount}
 
     refund_amount = payment.amount - payment.refund_amount
@@ -152,16 +146,17 @@ def refund_payment(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded")
 
     try:
-        result = MidtransService().refund_transaction(
-            payment.provider_order_id,
-            refund_amount,
-            "VeloraAi admin refund",
-        )
+        result = MidtransService().refund_transaction(payment.provider_order_id, refund_amount, "VeloraAi admin refund")
     except MidtransError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     payment.refund_amount = refund_amount
     payment.refund_status = str(result.get("status_code", result.get("status", "pending")))
     payment.refund_transaction_id = result.get("refund_key") or result.get("transaction_id")
+    if payment.refund_status in {"settlement", "200"}:
+        payment.refunded_at = payment.refunded_at or __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        payment.status = "refunded"
+        if payment.subscription is not None:
+            payment.subscription.status = "canceled"
     db.commit()
     return {"status": payment.refund_status, "payment_id": payment.id, "refund_amount": refund_amount}
