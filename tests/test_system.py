@@ -9,6 +9,12 @@ def test_health_endpoint():
     assert response.json()["service"] == "VeloraAi"
 
 
+def test_readiness_endpoint():
+    response = client.get("/api/v1/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+
 def test_info_endpoint_uses_configured_environment():
     old_env = settings.app_env
     settings.app_env = "test"
