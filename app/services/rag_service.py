@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Iterable
 
@@ -15,8 +16,22 @@ class RAGError(RuntimeError):
     pass
 
 
+class DuplicateDocumentError(RAGError):
+    def __init__(self, document_id: int):
+        self.document_id = document_id
+        super().__init__(f"Document already exists as document {document_id}")
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def content_hash(text: str) -> str:
+    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
+
+
 def chunk_text(text: str, *, chunk_size: int = 1200, overlap: int = 200) -> list[str]:
-    normalized = re.sub(r"\s+", " ", text).strip()
+    normalized = normalize_text(text)
     if not normalized:
         return []
     if overlap >= chunk_size:
@@ -75,19 +90,83 @@ def embed_texts(texts: Iterable[str]) -> list[list[float]]:
     return embeddings
 
 
-def ingest_text(db: Session, *, user_id: int, name: str, text: str, source: str = "text", mime_type: str | None = "text/plain") -> Document:
-    chunks = chunk_text(text)
+def _get_document(db: Session, *, user_id: int, document_id: int) -> Document:
+    document = db.execute(
+        select(Document).where(Document.id == document_id, Document.user_id == user_id)
+    ).scalar_one_or_none()
+    if not document:
+        raise RAGError("Document not found")
+    return document
+
+
+def ingest_text(
+    db: Session,
+    *,
+    user_id: int,
+    name: str,
+    text: str,
+    source: str = "text",
+    mime_type: str | None = "text/plain",
+) -> Document:
+    normalized = normalize_text(text)
+    if not normalized:
+        raise RAGError("Document text is empty")
+    digest = content_hash(normalized)
+    existing = db.execute(
+        select(Document).where(Document.user_id == user_id, Document.content_hash == digest)
+    ).scalar_one_or_none()
+    if existing:
+        raise DuplicateDocumentError(existing.id)
+
+    chunks = chunk_text(normalized)
     if not chunks:
         raise RAGError("Document text is empty")
     embeddings = embed_texts(chunks)
-    document = Document(user_id=user_id, name=name.strip()[:255], source=source, mime_type=mime_type, status="ready")
+    document = Document(
+        user_id=user_id,
+        name=name.strip()[:255],
+        source=source,
+        mime_type=mime_type,
+        status="ready",
+        content_hash=digest,
+        raw_text=normalized,
+    )
     db.add(document)
     db.flush()
-    for index, (content, embedding) in enumerate(zip(chunks, embeddings)):
-        db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=content, embedding=embedding))
+    for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
+        db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
     db.commit()
     db.refresh(document)
     return document
+
+
+def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
+    document = _get_document(db, user_id=user_id, document_id=document_id)
+    normalized = normalize_text(document.raw_text)
+    if not normalized:
+        raise RAGError("Document has no source text to re-index")
+    chunks = chunk_text(normalized)
+    if not chunks:
+        raise RAGError("Document text is empty")
+    try:
+        embeddings = embed_texts(chunks)
+        document.status = "ready"
+        document.content_hash = content_hash(normalized)
+        db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete(synchronize_session=False)
+        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
+            db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception:
+        db.rollback()
+        raise
+
+
+def delete_document(db: Session, *, user_id: int, document_id: int) -> None:
+    document = _get_document(db, user_id=user_id, document_id=document_id)
+    db.delete(document)
+    db.commit()
 
 
 def _vector_candidates(db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int) -> list[tuple[DocumentChunk, float]]:
@@ -115,10 +194,7 @@ def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limi
     )
     rows = list(db.execute(statement).scalars())
     query_terms = set(terms)
-    rows.sort(
-        key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()),
-        reverse=True,
-    )
+    rows.sort(key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()), reverse=True)
     return rows[:candidate_limit]
 
 
