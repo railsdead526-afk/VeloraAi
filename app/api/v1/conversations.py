@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.plans import get_plan_policy
 from app.core.rate_limit import limiter
 from app.crud.conversation import (
     create_conversation,
@@ -21,8 +22,24 @@ from app.crud.ai_usage import record_ai_usage
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
+from app.services.quota_service import QuotaExceededError, enforce_monthly_token_quota
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+
+def enforce_user_plan_quota(db: Session, user) -> None:
+    policy = get_plan_policy(getattr(user, "role", None))
+    try:
+        enforce_monthly_token_quota(
+            db,
+            user_id=user.id,
+            monthly_limit=policy.monthly_token_limit,
+        )
+    except QuotaExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Monthly AI token quota exceeded",
+        ) from exc
 
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -66,6 +83,7 @@ def send_message(conversation_id: int, payload: MessageCreate, db: Session = Dep
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
+    enforce_user_plan_quota(db, current_user)
     user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
     history = get_messages_by_conversation(db, conversation_id)
     history_payload = [{"role": message.role, "content": message.content} for message in history]
@@ -107,6 +125,7 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
+    enforce_user_plan_quota(db, current_user)
     user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
     history = get_messages_by_conversation(db, conversation_id)
     history_payload = [{"role": message.role, "content": message.content} for message in history]
