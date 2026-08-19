@@ -23,7 +23,7 @@ from app.models.document import Document
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import MessageCreate, MessageResponse, ChatReplyResponse
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
-from app.services.ai_tool_loop import generate_ai_reply_with_tools
+from app.services.ai_tool_loop import generate_ai_reply_with_tools, generate_ai_reply_with_tools_async
 from app.services.quota_service import QuotaExceededError, enforce_plan_quota
 from app.services.rag_service import RAGError, build_context, retrieve_chunks
 from app.tools.bootstrap import get_registry
@@ -195,9 +195,25 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     async def event_stream():
         chunks: list[str] = []
         try:
-            async for chunk in stream_ai_reply_from_history(history_payload, usage):
-                chunks.append(chunk)
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+            if settings.ai_provider in {"openai", "llama"}:
+                ai_result = await generate_ai_reply_with_tools_async(
+                    history_payload,
+                    plan=getattr(current_user, "role", "free"),
+                    confirmed=payload.confirm_tools,
+                    registry=get_registry(),
+                )
+                usage.update({
+                    "input_tokens": ai_result.input_tokens,
+                    "output_tokens": ai_result.output_tokens,
+                    "model": ai_result.model,
+                })
+                for chunk in ai_result.content.split(" "):
+                    chunks.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk + ' '}, ensure_ascii=False)}\n\n"
+            else:
+                async for chunk in stream_ai_reply_from_history(history_payload, usage):
+                    chunks.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
 
             assistant_reply = "".join(chunks).strip()
             if not assistant_reply:
