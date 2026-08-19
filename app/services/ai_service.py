@@ -1,5 +1,7 @@
+import json
 import logging
 import time
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -95,3 +97,80 @@ def generate_ai_reply_from_history(messages: list[dict]) -> str:
         return _request_openai(messages)
 
     raise RuntimeError("AI provider is not configured")
+
+
+async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[str]:
+    """Yield assistant text chunks without exposing provider-specific details."""
+    if not messages:
+        yield "Halo, ada yang bisa saya bantu?"
+        return
+
+    if settings.ai_provider == "mock":
+        reply = generate_ai_reply_from_history(messages)
+        words = reply.split(" ")
+        for index, word in enumerate(words):
+            yield word if index == 0 else f" {word}"
+        return
+
+    if settings.ai_provider != "openai":
+        raise RuntimeError("AI provider is not configured")
+    if not settings.openai_api_key:
+        raise RuntimeError("AI provider belum dikonfigurasi")
+
+    last_error = None
+    for attempt in range(settings.ai_max_retries + 1):
+        try:
+            timeout = httpx.Timeout(settings.ai_timeout_seconds)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST",
+                    f"{settings.openai_base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.openai_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.openai_model,
+                        "messages": _build_api_messages(messages),
+                        "temperature": 0.7,
+                        "stream": True,
+                    },
+                ) as response:
+                    if response.status_code in {429, 500, 502, 503, 504} and attempt < settings.ai_max_retries:
+                        await response.aread()
+                        await _async_backoff(attempt)
+                        continue
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == "[DONE]":
+                            return
+                        try:
+                            data = json.loads(payload)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = data.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        content = delta.get("content")
+                        if content:
+                            yield content
+                    return
+        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+            last_error = exc
+            logger.exception("AI streaming request failed on attempt %s", attempt + 1)
+            if attempt < settings.ai_max_retries:
+                await _async_backoff(attempt)
+                continue
+            break
+
+    raise RuntimeError("AI service temporarily unavailable") from last_error
+
+
+async def _async_backoff(attempt: int) -> None:
+    import asyncio
+
+    await asyncio.sleep(min(2 ** attempt, 4))
