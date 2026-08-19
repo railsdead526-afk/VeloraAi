@@ -10,7 +10,6 @@ from app.tools.providers import (
 
 
 READ_PLANS = frozenset({"free", "pro", "max", "admin"})
-MUTATION_PLANS = frozenset({"pro", "max", "admin"})
 
 
 def register_platform_tools(registry) -> None:
@@ -20,6 +19,11 @@ def register_platform_tools(registry) -> None:
             description="List repositories available to the authenticated GitHub account.",
             handler=github_list_repositories,
             allowed_plans=READ_PLANS,
+            parameters={
+                "type": "object",
+                "properties": {"per_page": {"type": "integer", "minimum": 1, "maximum": 100}},
+                "additionalProperties": False,
+            },
             timeout_seconds=15,
             max_calls_per_request=3,
         )
@@ -30,6 +34,15 @@ def register_platform_tools(registry) -> None:
             description="Read a file from a repository. Read-only operation.",
             handler=github_read_file,
             allowed_plans=READ_PLANS,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repository": {"type": "string", "description": "owner/repository"},
+                    "path": {"type": "string"},
+                },
+                "required": ["repository", "path"],
+                "additionalProperties": False,
+            },
             timeout_seconds=15,
             max_calls_per_request=5,
         )
@@ -40,6 +53,11 @@ def register_platform_tools(registry) -> None:
             description="List Vercel projects for the authenticated account.",
             handler=vercel_list_projects,
             allowed_plans=READ_PLANS,
+            parameters={
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                "additionalProperties": False,
+            },
             timeout_seconds=15,
             max_calls_per_request=3,
         )
@@ -50,6 +68,7 @@ def register_platform_tools(registry) -> None:
             description="List Railway projects for the authenticated account.",
             handler=railway_list_projects,
             allowed_plans=READ_PLANS,
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
             timeout_seconds=15,
             max_calls_per_request=3,
         )
@@ -60,6 +79,7 @@ def register_platform_tools(registry) -> None:
             description="List Cloudflare zones for the authenticated account.",
             handler=cloudflare_list_zones,
             allowed_plans=READ_PLANS,
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
             timeout_seconds=15,
             max_calls_per_request=3,
         )
@@ -70,6 +90,8 @@ def register_platform_tools(registry) -> None:
             description="List Supabase projects for the authenticated account.",
             handler=supabase_list_projects,
             allowed_plans=READ_PLANS,
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
             timeout_seconds=15,
             max_calls_per_request=3,
         )
+    )
