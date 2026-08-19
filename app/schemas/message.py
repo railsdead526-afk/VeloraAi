@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, validator
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=12000)
     confirm_tools: bool = False
+    use_rag: bool = True
 
     @validator("content")
     def content_must_not_be_blank(cls, value: str) -> str:
