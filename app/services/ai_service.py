@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -17,26 +18,22 @@ SYSTEM_PROMPT = (
 )
 
 
-class AIResult(str):
-    """String-compatible AI result carrying provider usage metadata."""
-
-    def __new__(
-        cls,
-        content: str,
-        input_tokens: Optional[int],
-        output_tokens: Optional[int],
-        model: str,
-    ):
-        instance = super().__new__(cls, content)
-        instance.input_tokens = input_tokens
-        instance.output_tokens = output_tokens
-        instance.model = model
-        return instance
-
+@dataclass
+class AIResult:
     content: str
     input_tokens: Optional[int]
     output_tokens: Optional[int]
     model: str
+
+    def __str__(self) -> str:
+        return self.content
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, AIResult):
+            return self.content == other.content
+        if isinstance(other, str):
+            return self.content == other
+        return NotImplemented
 
 
 def _build_api_messages(messages: list[dict]) -> list[dict]:
@@ -52,29 +49,38 @@ def _build_api_messages(messages: list[dict]) -> list[dict]:
 
 def _parse_usage(data: dict) -> tuple[Optional[int], Optional[int]]:
     usage = data.get("usage") or {}
-    input_tokens = usage.get("prompt_tokens")
-    output_tokens = usage.get("completion_tokens")
+    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         return input_tokens, output_tokens
     return None, None
 
 
-def _request_openai(messages: list[dict]) -> AIResult:
-    if not settings.openai_api_key:
+def _provider_config() -> tuple[str, str, str, str]:
+    if settings.ai_provider == "openai":
+        return settings.openai_api_key, settings.openai_base_url, settings.openai_model, "openai"
+    if settings.ai_provider == "llama":
+        return settings.llama_api_key, settings.llama_base_url, settings.llama_model, "llama"
+    raise RuntimeError("AI provider is not configured")
+
+
+def _request_openai_compatible(messages: list[dict]) -> AIResult:
+    api_key, base_url, model, provider = _provider_config()
+    if provider == "openai" and not api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
     for attempt in range(settings.ai_max_retries + 1):
         try:
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
             with httpx.Client(timeout=httpx.Timeout(settings.ai_timeout_seconds)) as client:
                 response = client.post(
-                    f"{settings.openai_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.openai_api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    f"{base_url}/chat/completions",
+                    headers=headers,
                     json={
-                        "model": settings.openai_model,
+                        "model": model,
                         "messages": _build_api_messages(messages),
                         "temperature": 0.7,
                     },
@@ -88,7 +94,7 @@ def _request_openai(messages: list[dict]) -> AIResult:
                 if not content:
                     raise RuntimeError("AI provider returned an empty response")
                 input_tokens, output_tokens = _parse_usage(data)
-                return AIResult(content.strip(), input_tokens, output_tokens, settings.openai_model)
+                return AIResult(content.strip(), input_tokens, output_tokens, model)
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             last_error = exc
             logger.exception("AI provider request failed on attempt %s", attempt + 1)
@@ -130,19 +136,14 @@ def _mock_result(messages: list[dict]) -> AIResult:
     else:
         reply = f"Halo, saya menerima pesanmu: {current_message}"
 
-    return AIResult(
-        reply,
-        max(1, sum(len(item.get("content", "")) for item in messages) // 4),
-        max(1, len(reply) // 4),
-        "mock",
-    )
+    return AIResult(reply, max(1, sum(len(item.get("content", "")) for item in messages) // 4), max(1, len(reply) // 4), "mock")
 
 
 def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
     if settings.ai_provider == "mock":
         return _mock_result(messages)
-    if settings.ai_provider == "openai":
-        return _request_openai(messages)
+    if settings.ai_provider in {"openai", "llama"}:
+        return _request_openai_compatible(messages)
     raise RuntimeError("AI provider is not configured")
 
 
@@ -160,19 +161,17 @@ async def stream_ai_reply_from_history(
     if settings.ai_provider == "mock":
         result = _mock_result(messages)
         if usage_sink is not None:
-            usage_sink.update({
-                "input_tokens": result.input_tokens,
-                "output_tokens": result.output_tokens,
-                "model": result.model,
-            })
+            usage_sink.update({"input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "model": result.model})
         words = result.content.split(" ")
         for index, word in enumerate(words):
             yield word if index == 0 else f" {word}"
         return
 
-    if settings.ai_provider != "openai":
+    if settings.ai_provider not in {"openai", "llama"}:
         raise RuntimeError("AI provider is not configured")
-    if not settings.openai_api_key:
+
+    api_key, base_url, model, provider = _provider_config()
+    if provider == "openai" and not api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
@@ -180,16 +179,16 @@ async def stream_ai_reply_from_history(
         streamed_content = False
         try:
             timeout = httpx.Timeout(settings.ai_timeout_seconds)
+            headers = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{settings.openai_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {settings.openai_api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    f"{base_url}/chat/completions",
+                    headers=headers,
                     json={
-                        "model": settings.openai_model,
+                        "model": model,
                         "messages": _build_api_messages(messages),
                         "temperature": 0.7,
                         "stream": True,
@@ -214,11 +213,7 @@ async def stream_ai_reply_from_history(
                         input_tokens, output_tokens = _parse_usage(data)
                         if input_tokens is not None and output_tokens is not None:
                             if usage_sink is not None:
-                                usage_sink.update({
-                                    "input_tokens": input_tokens,
-                                    "output_tokens": output_tokens,
-                                    "model": settings.openai_model,
-                                })
+                                usage_sink.update({"input_tokens": input_tokens, "output_tokens": output_tokens, "model": model})
                             continue
                         choices = data.get("choices") or []
                         if not choices:
