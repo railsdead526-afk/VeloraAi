@@ -1,6 +1,7 @@
 import json
 
 from app.core.plans import get_plan_policy
+from app.services.ai_tool_loop import generate_ai_reply_with_tools_async
 from app.tools.bootstrap import get_registry
 from app.tools.executor import ToolExecutionError, execute_tool
 
@@ -39,3 +40,7 @@ def test_terminal_is_not_available_to_free():
 def test_tool_error_results_are_json_serializable():
     payload = {"error": "Tool execution failed"}
     assert json.dumps(payload)
+
+
+def test_async_tool_loop_entrypoint_exists():
+    assert callable(generate_ai_reply_with_tools_async)
