@@ -8,7 +8,16 @@ from app.services.quota_service import (
     enforce_monthly_token_quota,
     tokens_used_since,
 )
-from tests.conftest import db
+from tests.conftest import TestingSessionLocal
+
+
+@pytest.fixture
+def db():
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
 
 
 def test_tokens_used_since(db):
