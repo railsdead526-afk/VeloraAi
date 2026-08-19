@@ -31,6 +31,12 @@ class Settings:
 
     document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
+    midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
+    midtrans_is_production = os.getenv("MIDTRANS_IS_PRODUCTION", "false").lower() == "true"
+    midtrans_base_url = os.getenv("MIDTRANS_BASE_URL", "https://api.sandbox.midtrans.com")
+    midtrans_snap_base_url = os.getenv("MIDTRANS_SNAP_BASE_URL", "https://app.sandbox.midtrans.com")
+    payment_timeout_seconds = float(os.getenv("PAYMENT_TIMEOUT_SECONDS", "15"))
+
     rate_limit_default = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
     rate_limit_auth = os.getenv("RATE_LIMIT_AUTH", "10/minute")
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
@@ -54,6 +60,8 @@ class Settings:
             raise RuntimeError("EMBEDDING_DIMENSIONS must be greater than zero")
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
+        if self.payment_timeout_seconds <= 0:
+            raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
