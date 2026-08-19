@@ -1,4 +1,5 @@
 from app.tools.bootstrap import get_registry
+from app.tools.terminal_tools import _quote
 
 
 def test_terminal_capabilities_are_registered():
@@ -24,3 +25,11 @@ def test_terminal_test_and_build_require_confirmation():
     registry = get_registry()
     assert registry.get("terminal_run_tests").requires_confirmation is True
     assert registry.get("terminal_run_build").requires_confirmation is True
+
+
+def test_terminal_argument_quoting_blocks_shell_expansion():
+    value = "$(touch /tmp/pwned) && echo unsafe"
+    quoted = _quote(value)
+    assert quoted.startswith("'") and quoted.endswith("'")
+    assert "pwned" in quoted
+    assert quoted != value
