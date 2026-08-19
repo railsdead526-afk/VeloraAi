@@ -1,5 +1,4 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
 
 export interface User {
   id: number
@@ -15,10 +14,9 @@ export interface TokenResponse {
 
 export interface Conversation {
   id: number
-  title: string
   user_id: number
+  title: string
   created_at: string
-  updated_at: string
 }
 
 export interface Message {
@@ -29,6 +27,11 @@ export interface Message {
   created_at: string
 }
 
+export interface ChatReplyResponse {
+  user_message: Message
+  assistant_message: Message
+}
+
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem('velora_access_token')
@@ -36,21 +39,13 @@ function getToken(): string | null {
 
 function authHeaders(): HeadersInit {
   const token = getToken()
-
   return {
     'Content-Type': 'application/json',
-    ...(token
-      ? {
-          Authorization: `Bearer ${token}`,
-        }
-      : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
 }
 
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -61,34 +56,26 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`
-
     try {
       const data = await response.json()
-      if (typeof data?.detail === 'string') {
-        message = data.detail
-      }
-    } catch {}
-
+      if (typeof data?.detail === 'string') message = data.detail
+    } catch {
+      // Keep the HTTP status message when the response is not JSON.
+    }
     throw new Error(message)
   }
 
-  return response.json()
+  return response.json() as Promise<T>
 }
 
-export async function login(
-  email: string,
-  password: string,
-): Promise<TokenResponse> {
+export async function login(email: string, password: string): Promise<TokenResponse> {
   return apiFetch<TokenResponse>('/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })
 }
 
-export async function register(
-  email: string,
-  password: string,
-): Promise<User> {
+export async function register(email: string, password: string): Promise<User> {
   return apiFetch<User>('/api/v1/auth/register', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -103,41 +90,26 @@ export async function listConversations(): Promise<Conversation[]> {
   return apiFetch<Conversation[]>('/api/v1/conversations')
 }
 
-export async function createConversation(
-  title?: string,
-): Promise<Conversation> {
+export async function createConversation(title = 'New Chat'): Promise<Conversation> {
   return apiFetch<Conversation>('/api/v1/conversations', {
     method: 'POST',
-    body: JSON.stringify({
-      title: title || 'New Chat',
-    }),
+    body: JSON.stringify({ title }),
   })
 }
 
-export async function getMessages(
-  conversationId: number,
-): Promise<Message[]> {
-  return apiFetch<Message[]>(
-    `/api/v1/conversations/${conversationId}/messages`,
-  )
+export async function getMessages(conversationId: number): Promise<Message[]> {
+  return apiFetch<Message[]>(`/api/v1/conversations/${conversationId}/messages`)
 }
 
 export async function sendMessage(
   conversationId: number,
   content: string,
-  useRag = false,
+  useRag = true,
   confirmTools = false,
-): Promise<{
-  user_message: Message
-  assistant_message: Message
-}> {
-  return apiFetch(`/api/v1/conversations/${conversationId}/messages`, {
+): Promise<ChatReplyResponse> {
+  return apiFetch<ChatReplyResponse>(`/api/v1/conversations/${conversationId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({
-      content,
-      use_rag: useRag,
-      confirm_tools: confirmTools,
-    }),
+    body: JSON.stringify({ content, use_rag: useRag, confirm_tools: confirmTools }),
   })
 }
 
