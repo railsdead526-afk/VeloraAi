@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.plans import PlanPolicy
 from app.models.ai_usage import AIUsage
-from app.services.plan_service import PlanPolicy
 
 
 class QuotaExceededError(Exception):
