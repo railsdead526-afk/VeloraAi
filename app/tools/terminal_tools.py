@@ -1,6 +1,12 @@
+import base64
+import shlex
 from typing import Any
 
 from app.tools.terminal import terminal_exec
+
+
+def _quote(value: str) -> str:
+    return shlex.quote(value)
 
 
 def _run(command: str, arguments: dict[str, Any], timeout: int = 30) -> dict[str, Any]:
@@ -11,22 +17,21 @@ def terminal_read_file(arguments: dict[str, Any]) -> dict[str, Any]:
     path = str(arguments.get("path", "")).strip()
     if not path:
         raise ValueError("path is required")
-    return _run(f"sed -n '1,400p' -- {path!r}", arguments)
+    return _run(f"sed -n '1,400p' -- {_quote(path)}", arguments)
 
 
 def terminal_list_directory(arguments: dict[str, Any]) -> dict[str, Any]:
     path = str(arguments.get("path", ".")).strip() or "."
-    return _run(f"find {path!r} -maxdepth 2 -print | head -200", arguments)
+    return _run(f"find {_quote(path)} -maxdepth 2 -print | head -200", arguments)
 
 
 def terminal_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
-    import base64
     path = str(arguments.get("path", "")).strip()
     content = arguments.get("content")
     if not path or not isinstance(content, str):
         raise ValueError("path and content are required")
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    return _run(f"printf %s {encoded!r} | base64 -d > {path!r}", arguments)
+    return _run(f"printf %s {_quote(encoded)} | base64 -d > {_quote(path)}", arguments)
 
 
 def terminal_git_status(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -49,14 +54,14 @@ def terminal_git_checkout(arguments: dict[str, Any]) -> dict[str, Any]:
     branch = str(arguments.get("branch", "")).strip()
     if not branch:
         raise ValueError("branch is required")
-    return _run(f"git checkout {branch!r}", arguments)
+    return _run(f"git checkout {_quote(branch)}", arguments)
 
 
 def terminal_git_commit(arguments: dict[str, Any]) -> dict[str, Any]:
     message = str(arguments.get("message", "")).strip()
     if not message:
         raise ValueError("message is required")
-    return _run(f"git add -A && git commit -m {message!r}", arguments, 60)
+    return _run(f"git add -A && git commit -m {_quote(message)}", arguments, 60)
 
 
 def terminal_run_tests(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -80,4 +85,4 @@ def terminal_install_package(arguments: dict[str, Any]) -> dict[str, Any]:
     commands = {"npm": "npm install", "pnpm": "pnpm add", "yarn": "yarn add", "pip": "python -m pip install"}
     if manager not in commands or not package:
         raise ValueError("manager and package are required")
-    return _run(f"{commands[manager]} {package!r}", arguments, 120)
+    return _run(f"{commands[manager]} {_quote(package)}", arguments, 120)
