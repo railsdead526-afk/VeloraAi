@@ -1,6 +1,9 @@
 import base64
 import os
 from typing import Any
+from urllib.parse import quote
+
+import httpx
 
 from app.tools.providers import ToolProviderError, _request
 
@@ -27,7 +30,8 @@ def github_search_code(arguments: dict[str, Any]) -> dict[str, Any]:
     if arguments.get("repository"):
         query = f"{query} repo:{_repo(arguments)}"
     per_page = min(max(int(arguments.get("per_page", 20)), 1), 100)
-    return _request("GET", f"https://api.github.com/search/code?q={query}&per_page={per_page}", token=token)
+    encoded_query = quote(query, safe="")
+    return _request("GET", f"https://api.github.com/search/code?q={encoded_query}&per_page={per_page}", token=token)
 
 
 def github_list_branches(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -64,7 +68,7 @@ def github_create_branch(arguments: dict[str, Any]) -> dict[str, Any]:
     source = str(arguments.get("source", "main")).strip()
     if not name:
         raise ToolProviderError("name is required")
-    source_data = _request("GET", f"https://api.github.com/repos/{repo}/git/ref/heads/{source}", token=token)
+    source_data = _request("GET", f"https://api.github.com/repos/{repo}/git/ref/heads/{quote(source, safe='/-._')}", token=token)
     sha = ((source_data.get("object") or {}).get("sha"))
     if not sha:
         raise ToolProviderError("source branch was not found")
@@ -85,16 +89,30 @@ def github_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
     message = str(arguments.get("message", "Update file")).strip()
     if not path or not isinstance(content, str):
         raise ToolProviderError("path and string content are required")
-    encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    payload: dict[str, Any] = {"message": message, "content": encoded, "branch": branch}
-    existing = None
+
+    encoded_path = quote(path, safe="/")
+    existing_sha = None
     try:
-        existing = _request("GET", f"https://api.github.com/repos/{repo}/contents/{path}?ref={branch}", token=token)
-    except ToolProviderError:
-        existing = None
-    if isinstance(existing, dict) and existing.get("sha"):
-        payload["sha"] = existing["sha"]
-    return _request("PUT", f"https://api.github.com/repos/{repo}/contents/{path}", token=token, json=payload)
+        response = httpx.get(
+            f"https://api.github.com/repos/{repo}/contents/{encoded_path}?ref={quote(branch, safe='')}",
+            headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        if response.status_code == 200:
+            existing_sha = response.json().get("sha")
+        elif response.status_code != 404:
+            response.raise_for_status()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ToolProviderError("Unable to inspect existing GitHub file") from exc
+
+    payload: dict[str, Any] = {
+        "message": message,
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+    }
+    if existing_sha:
+        payload["sha"] = existing_sha
+    return _request("PUT", f"https://api.github.com/repos/{repo}/contents/{encoded_path}", token=token, json=payload)
 
 
 def github_create_issue(arguments: dict[str, Any]) -> dict[str, Any]:
