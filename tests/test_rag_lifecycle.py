@@ -4,6 +4,7 @@ import pytest
 
 from app.models.document import Document
 from app.models.user import User
+from app.services.rag_jobs import process_document_index
 from app.services.rag_service import DuplicateDocumentError, RAGError, delete_document, ingest_text, reindex_document
 
 
@@ -28,16 +29,19 @@ def test_ingest_document_rejects_duplicate_content(db, users):
     assert exc.value.document_id == document.id
 
 
-def test_reindex_rebuilds_chunks(db, users):
+def test_reindex_queues_and_job_rebuilds_chunks(db, users):
     owner, _ = users
     with patch("app.services.rag_service.embed_texts", return_value=[[0.0] * 1536]):
         document = ingest_text(db, user_id=owner.id, name="one", text="first content")
         document.raw_text = "changed content"
         db.commit()
-        reindexed = reindex_document(db, user_id=owner.id, document_id=document.id)
+        queued = reindex_document(db, user_id=owner.id, document_id=document.id)
+        assert queued.status == "queued"
+        process_document_index(document.id)
 
-    assert reindexed.status == "ready"
-    assert reindexed.chunks[0].content == "changed content"
+    db.refresh(document)
+    assert document.status == "ready"
+    assert document.chunks[0].content == "changed content"
 
 
 def test_delete_document_is_user_scoped(db, users):
