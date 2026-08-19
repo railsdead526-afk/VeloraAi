@@ -7,12 +7,15 @@ from app.tools.base import ToolDefinition
 
 
 _PLATFORM_KEYWORDS = {
-    "github": {"github", "repo", "repository", "branch", "pull request", "pr", "issue", "commit"},
+    "github": {
+        "github", "repo", "repository", "branch", "pull request", "pr", "issue", "commit",
+        "ci", "actions", "workflow", "review", "merge", "comment", "checks",
+    },
     "vercel": {"vercel", "deployment", "deploy", "domain"},
     "railway": {"railway", "service", "deployment", "deploy"},
     "cloudflare": {"cloudflare", "dns", "worker", "workers", "r2", "zone"},
     "supabase": {"supabase", "postgres", "database", "sql", "edge function"},
-    "terminal": {"terminal", "shell", "command", "bash", "npm", "pip", "build", "test", "lint"},
+    "terminal": {"terminal", "shell", "command", "bash", "npm", "pip", "build", "test", "lint", "git"},
     "calculator": {"calculate", "calculator", "hitung", "berapa", "math"},
 }
 
