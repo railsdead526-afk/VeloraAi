@@ -1,6 +1,15 @@
 *.db
 *.db.bak
+*.sqlite
+*.sqlite3
 __pycache__/
 .venv/
 venv/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.log
 .env
+.env.*
+!.env.example
