@@ -2,6 +2,7 @@ import time
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.document import Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
@@ -20,6 +21,8 @@ def process_document_index(document_id: int) -> None:
             return
 
         document.status = "processing"
+        document.indexing_attempts = int(document.indexing_attempts or 0) + 1
+        document.last_index_error = None
         db.commit()
 
         normalized = normalize_text(document.raw_text)
@@ -55,6 +58,8 @@ def process_document_index(document_id: int) -> None:
             )
         document.content_hash = content_hash(normalized)
         document.status = "ready"
+        document.last_index_error = None
+        document.last_indexed_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -64,14 +69,15 @@ def process_document_index(document_id: int) -> None:
                     db,
                     user_id=document.user_id,
                     document_id=document.id,
-                    provider="unknown",
-                    model="unknown",
+                    provider=settings.ai_provider,
+                    model=settings.embedding_model,
                     duration_ms=int((time.perf_counter() - started) * 1000),
                     status="failed",
                     error_type=type(exc).__name__,
                     commit=False,
                 )
                 document.status = "failed"
+                document.last_index_error = type(exc).__name__
                 db.commit()
             except Exception:
                 db.rollback()
