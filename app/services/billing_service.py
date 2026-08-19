@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.billing import Payment, Subscription
+from app.models.user import User
 
 
 PAID_STATUSES = {"settlement", "capture"}
@@ -52,10 +53,10 @@ def apply_payment_notification(
     if payment is None:
         return None
 
-    if payment.status == "settlement" and transaction_status in PAID_STATUSES:
+    normalized = transaction_status.lower()
+    if payment.status == "settlement" and normalized in PAID_STATUSES:
         return payment
 
-    normalized = transaction_status.lower()
     if normalized in PAID_STATUSES:
         payment.status = "settlement"
         payment.paid_at = payment.paid_at or datetime.now(timezone.utc)
@@ -75,6 +76,10 @@ def apply_payment_notification(
         else:
             subscription.plan = payment.plan
             subscription.status = "active"
+
+        user = db.get(User, payment.user_id)
+        if user is not None and user.role != "admin":
+            user.role = payment.plan
     elif normalized in FAILED_STATUSES:
         payment.status = normalized
         payment.provider_transaction_id = provider_transaction_id or payment.provider_transaction_id
