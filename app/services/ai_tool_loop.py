@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Any
@@ -5,7 +6,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
-from app.services.ai_service import AIResult, _build_api_messages, _provider_config, _parse_usage
+from app.services.ai_service import AIResult, _build_api_messages, _parse_usage, _provider_config
 from app.tools.executor import ToolExecutionError, execute_tool
 from app.tools.registry import ToolRegistry
 
@@ -20,6 +21,27 @@ def _tool_message(tool_call_id: str, result: Any) -> dict[str, str]:
     except (TypeError, ValueError):
         content = str(result)
     return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
+
+
+def _run_tool(
+    registry: ToolRegistry,
+    *,
+    name: str,
+    arguments: dict[str, Any],
+    plan: str,
+    confirmed: bool,
+    call_counts: dict[str, int],
+) -> Any:
+    return asyncio.run(
+        execute_tool(
+            registry,
+            name=name,
+            arguments=arguments,
+            plan=plan,
+            confirmed=confirmed,
+            call_counts=call_counts,
+        )
+    )
 
 
 def generate_ai_reply_with_tools(
@@ -44,6 +66,7 @@ def generate_ai_reply_with_tools(
     total_input_tokens = 0
     total_output_tokens = 0
     usage_seen = False
+    call_counts: dict[str, int] = {}
 
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -112,31 +135,10 @@ def generate_ai_reply_with_tools(
                     arguments=arguments,
                     plan=plan,
                     confirmed=confirmed,
+                    call_counts=call_counts,
                 )
             except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
                 result = {"error": str(exc)}
             api_messages.append(_tool_message(tool_call_id, result))
 
     raise RuntimeError("AI tool execution exceeded the maximum number of rounds")
-
-
-def _run_tool(
-    registry: ToolRegistry,
-    *,
-    name: str,
-    arguments: dict[str, Any],
-    plan: str,
-    confirmed: bool,
-) -> Any:
-    tool = registry.get(name)
-    # Reuse async-safe executor from synchronous code through its event loop boundary.
-    import asyncio
-    return asyncio.run(
-        execute_tool(
-            registry,
-            name=name,
-            arguments=arguments,
-            plan=plan,
-            confirmed=confirmed,
-        )
-    )
