@@ -72,12 +72,7 @@ def github_create_branch(arguments: dict[str, Any]) -> dict[str, Any]:
     sha = ((source_data.get("object") or {}).get("sha"))
     if not sha:
         raise ToolProviderError("source branch was not found")
-    return _request(
-        "POST",
-        f"https://api.github.com/repos/{repo}/git/refs",
-        token=token,
-        json={"ref": f"refs/heads/{name}", "sha": sha},
-    )
+    return _request("POST", f"https://api.github.com/repos/{repo}/git/refs", token=token, json={"ref": f"refs/heads/{name}", "sha": sha})
 
 
 def github_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +84,6 @@ def github_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
     message = str(arguments.get("message", "Update file")).strip()
     if not path or not isinstance(content, str):
         raise ToolProviderError("path and string content are required")
-
     encoded_path = quote(path, safe="/")
     existing_sha = None
     try:
@@ -104,12 +98,7 @@ def github_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
             response.raise_for_status()
     except (httpx.HTTPError, ValueError) as exc:
         raise ToolProviderError("Unable to inspect existing GitHub file") from exc
-
-    payload: dict[str, Any] = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": branch,
-    }
+    payload: dict[str, Any] = {"message": message, "content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "branch": branch}
     if existing_sha:
         payload["sha"] = existing_sha
     return _request("PUT", f"https://api.github.com/repos/{repo}/contents/{encoded_path}", token=token, json=payload)
@@ -134,9 +123,73 @@ def github_create_pull_request(arguments: dict[str, Any]) -> dict[str, Any]:
     body = str(arguments.get("body", ""))
     if not title or not head:
         raise ToolProviderError("title and head are required")
-    return _request(
-        "POST",
-        f"https://api.github.com/repos/{repo}/pulls",
-        token=token,
-        json={"title": title, "head": head, "base": base, "body": body},
-    )
+    return _request("POST", f"https://api.github.com/repos/{repo}/pulls", token=token, json={"title": title, "head": head, "base": base, "body": body})
+
+
+def github_create_issue_comment(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    issue_number = int(arguments.get("issue_number", 0))
+    body = str(arguments.get("body", "")).strip()
+    if issue_number < 1 or not body:
+        raise ToolProviderError("issue_number and body are required")
+    return _request("POST", f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments", token=token, json={"body": body})
+
+
+def github_get_pr_reviews(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    pr_number = int(arguments.get("pr_number", 0))
+    if pr_number < 1:
+        raise ToolProviderError("pr_number is required")
+    return _request("GET", f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews", token=token)
+
+
+def github_get_pr_comments(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    pr_number = int(arguments.get("pr_number", 0))
+    if pr_number < 1:
+        raise ToolProviderError("pr_number is required")
+    return _request("GET", f"https://api.github.com/repos/{repo}/pulls/{pr_number}/comments", token=token)
+
+
+def github_get_commit_status(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    sha = str(arguments.get("sha", "")).strip()
+    if not sha:
+        raise ToolProviderError("sha is required")
+    return _request("GET", f"https://api.github.com/repos/{repo}/commits/{quote(sha, safe='')}/status", token=token)
+
+
+def github_list_workflow_jobs(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    run_id = int(arguments.get("run_id", 0))
+    if run_id < 1:
+        raise ToolProviderError("run_id is required")
+    return _request("GET", f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100", token=token)
+
+
+def github_rerun_failed_jobs(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    run_id = int(arguments.get("run_id", 0))
+    if run_id < 1:
+        raise ToolProviderError("run_id is required")
+    return _request("POST", f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/rerun-failed-jobs", token=token, json={})
+
+
+def github_merge_pull_request(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    repo = _repo(arguments)
+    pr_number = int(arguments.get("pr_number", 0))
+    method = str(arguments.get("merge_method", "squash"))
+    expected_head_sha = str(arguments.get("expected_head_sha", "")).strip()
+    if pr_number < 1 or method not in {"merge", "squash", "rebase"}:
+        raise ToolProviderError("invalid merge arguments")
+    payload: dict[str, Any] = {"merge_method": method}
+    if expected_head_sha:
+        payload["sha"] = expected_head_sha
+    return _request("PUT", f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge", token=token, json=payload)
