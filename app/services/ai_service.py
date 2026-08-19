@@ -3,6 +3,8 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Optional
 
 import httpx
 
@@ -16,6 +18,14 @@ SYSTEM_PROMPT = (
 )
 
 
+@dataclass
+class AIResult:
+    content: str
+    input_tokens: Optional[int]
+    output_tokens: Optional[int]
+    model: str
+
+
 def _build_api_messages(messages: list[dict]) -> list[dict]:
     api_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     recent_messages = messages[-settings.ai_max_history_messages :]
@@ -27,7 +37,16 @@ def _build_api_messages(messages: list[dict]) -> list[dict]:
     return api_messages
 
 
-def _request_openai(messages: list[dict]) -> str:
+def _parse_usage(data: dict) -> tuple[Optional[int], Optional[int]]:
+    usage = data.get("usage") or {}
+    input_tokens = usage.get("prompt_tokens")
+    output_tokens = usage.get("completion_tokens")
+    if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+        return input_tokens, output_tokens
+    return None, None
+
+
+def _request_openai(messages: list[dict]) -> AIResult:
     if not settings.openai_api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
@@ -55,7 +74,13 @@ def _request_openai(messages: list[dict]) -> str:
                 content = data.get("choices", [{}])[0].get("message", {}).get("content")
                 if not content:
                     raise RuntimeError("AI provider returned an empty response")
-                return content.strip()
+                input_tokens, output_tokens = _parse_usage(data)
+                return AIResult(
+                    content=content.strip(),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    model=settings.openai_model,
+                )
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             last_error = exc
             logger.exception("AI provider request failed on attempt %s", attempt + 1)
@@ -67,48 +92,55 @@ def _request_openai(messages: list[dict]) -> str:
     raise RuntimeError("AI service temporarily unavailable") from last_error
 
 
-def generate_ai_reply_from_history(messages: list[dict]) -> str:
+def _mock_result(messages: list[dict]) -> AIResult:
     if not messages:
-        return "Halo, ada yang bisa saya bantu?"
+        return AIResult("Halo, ada yang bisa saya bantu?", 0, 0, "mock")
 
+    user_messages = [
+        (msg.get("content") or "").strip()
+        for msg in messages
+        if msg.get("role") == "user" and (msg.get("content") or "").strip()
+    ]
+    if not user_messages:
+        return AIResult("Tolong kirim pesan yang ingin kamu bahas.", 0, 0, "mock")
+
+    current_message = user_messages[-1]
+    current_lower = current_message.lower()
+    if "pesan saya sebelumnya apa" in current_lower:
+        previous_different = next((old for old in reversed(user_messages[:-1]) if old.lower() != current_lower), None)
+        reply = f"Pesan kamu sebelumnya adalah: {previous_different}" if previous_different else "Ini adalah pesan pertamamu di percakapan ini."
+    elif "pesan pertama saya apa" in current_lower:
+        reply = f"Pesan pertama kamu adalah: {user_messages[0]}"
+    elif "berapa kali saya sudah kirim pesan" in current_lower:
+        reply = f"Kamu sudah mengirim {len(user_messages)} pesan."
+    elif "ulangi 2 pesan terakhir saya" in current_lower:
+        reply = (
+            f"Dua pesan terakhirmu adalah: 1) {user_messages[-2]} 2) {user_messages[-1]}"
+            if len(user_messages) >= 2
+            else f"Baru ada satu pesan darimu: {user_messages[-1]}"
+        )
+    else:
+        reply = f"Halo, saya menerima pesanmu: {current_message}"
+
+    return AIResult(reply, max(1, sum(len(item["content"]) for item in messages) // 4), max(1, len(reply) // 4), "mock")
+
+
+def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
     if settings.ai_provider == "mock":
-        user_messages = [
-            (msg.get("content") or "").strip()
-            for msg in messages
-            if msg.get("role") == "user" and (msg.get("content") or "").strip()
-        ]
-        if not user_messages:
-            return "Tolong kirim pesan yang ingin kamu bahas."
-        current_message = user_messages[-1]
-        current_lower = current_message.lower()
-        if "pesan saya sebelumnya apa" in current_lower:
-            previous_different = next((old for old in reversed(user_messages[:-1]) if old.lower() != current_lower), None)
-            return f"Pesan kamu sebelumnya adalah: {previous_different}" if previous_different else "Ini adalah pesan pertamamu di percakapan ini."
-        if "pesan pertama saya apa" in current_lower:
-            return f"Pesan pertama kamu adalah: {user_messages[0]}"
-        if "berapa kali saya sudah kirim pesan" in current_lower:
-            return f"Kamu sudah mengirim {len(user_messages)} pesan."
-        if "ulangi 2 pesan terakhir saya" in current_lower:
-            if len(user_messages) >= 2:
-                return f"Dua pesan terakhirmu adalah: 1) {user_messages[-2]} 2) {user_messages[-1]}"
-            return f"Baru ada satu pesan darimu: {user_messages[-1]}"
-        return f"Halo, saya menerima pesanmu: {current_message}"
-
+        return _mock_result(messages)
     if settings.ai_provider == "openai":
         return _request_openai(messages)
-
     raise RuntimeError("AI provider is not configured")
 
 
 async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[str]:
-    """Yield assistant text chunks without exposing provider-specific details."""
     if not messages:
         yield "Halo, ada yang bisa saya bantu?"
         return
 
     if settings.ai_provider == "mock":
-        reply = generate_ai_reply_from_history(messages)
-        words = reply.split(" ")
+        result = _mock_result(messages)
+        words = result.content.split(" ")
         for index, word in enumerate(words):
             yield word if index == 0 else f" {word}"
         return
@@ -136,6 +168,7 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
                         "messages": _build_api_messages(messages),
                         "temperature": 0.7,
                         "stream": True,
+                        "stream_options": {"include_usage": True},
                     },
                 ) as response:
                     if response.status_code in {429, 500, 502, 503, 504} and attempt < settings.ai_max_retries:
@@ -152,6 +185,9 @@ async def stream_ai_reply_from_history(messages: list[dict]) -> AsyncIterator[st
                         try:
                             data = json.loads(payload)
                         except json.JSONDecodeError:
+                            continue
+                        usage = data.get("usage") or {}
+                        if usage:
                             continue
                         choices = data.get("choices") or []
                         if not choices:
