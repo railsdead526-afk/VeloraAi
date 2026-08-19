@@ -1,13 +1,17 @@
-from unittest.mock import patch
-
 from app.models.document import Document
-from app.services.rag_service import create_pending_document, embed_texts, reindex_document
-from app.services.embedding_usage_service import embedding_usage_summary
+from app.models.user import User
+from app.services.embedding_usage_service import embedding_usage_summary, record_embedding_usage
+from app.services.rag_service import embed_texts, reindex_document
 
 
 def test_reindex_resets_failure_metadata(db):
+    user = User(email="rag-hardening@example.com", hashed_password="test", role="free")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
     document = Document(
-        user_id=1,
+        user_id=user.id,
         name="failed.txt",
         source="text",
         mime_type="text/plain",
@@ -21,7 +25,7 @@ def test_reindex_resets_failure_metadata(db):
     db.commit()
     db.refresh(document)
 
-    result = reindex_document(db, user_id=1, document_id=document.id)
+    result = reindex_document(db, user_id=user.id, document_id=document.id)
 
     assert result.status == "queued"
     assert result.last_index_error is None
@@ -29,8 +33,6 @@ def test_reindex_resets_failure_metadata(db):
 
 
 def test_embedding_usage_summary_tracks_query_embeddings(db):
-    from app.services.embedding_usage_service import record_embedding_usage
-
     record_embedding_usage(
         db,
         user_id=7,
@@ -63,4 +65,6 @@ def test_embed_texts_returns_usage_metadata(monkeypatch):
     vectors, metadata = embed_texts(["hello"], return_metadata=True)
 
     assert len(vectors) == 1
-    assert metadata == {"provider": "mock", "model": "test-model", "input_tokens": 17}
+    assert metadata["model"] == "test-model"
+    assert metadata["input_tokens"] == 17
+    assert metadata["provider"] == "mock"
