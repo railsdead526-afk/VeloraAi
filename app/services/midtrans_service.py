@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 
 import httpx
 
@@ -82,7 +83,7 @@ class MidtransService:
     ) -> bool:
         raw = f"{order_id}{status_code}{gross_amount}{self.server_key}".encode()
         expected = hashlib.sha512(raw).hexdigest()
-        return hashlib.compare_digest(expected, signature_key)
+        return hmac.compare_digest(expected, signature_key)
 
     def get_transaction_status(self, order_id: str) -> dict:
         headers = {
