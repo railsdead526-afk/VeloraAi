@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  sqlite-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,15 +17,7 @@ jobs:
           cache: "pip"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Validate Alembic migrations
-        env:
-          APP_ENV: test
-          APP_DEBUG: "false"
-          DATABASE_URL: sqlite:///./test.db
-          SECRET_KEY: test-secret-key
-          AI_PROVIDER: mock
-        run: alembic upgrade head
-      - name: Run tests with coverage
+      - name: Run SQLite tests with coverage
         env:
           APP_ENV: test
           APP_DEBUG: "false"
@@ -33,3 +25,36 @@ jobs:
           SECRET_KEY: test-secret-key
           AI_PROVIDER: mock
         run: pytest -q --cov=app --cov-report=term-missing
+
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: velora
+          POSTGRES_PASSWORD: velora
+          POSTGRES_DB: velora_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U velora -d velora_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate PostgreSQL migrations
+        env:
+          APP_ENV: test
+          APP_DEBUG: "false"
+          DATABASE_URL: postgresql://velora:velora@localhost:5432/velora_test
+          SECRET_KEY: test-secret-key
+          AI_PROVIDER: mock
+        run: alembic upgrade head
