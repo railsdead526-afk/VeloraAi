@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.plans import PlanPolicy
 from app.models.ai_usage import AIUsage
+from app.models.user import User
 
 
 class QuotaExceededError(Exception):
@@ -34,6 +35,11 @@ def requests_used_since(db: Session, user_id: int, since: datetime) -> int:
     return int(total or 0)
 
 
+def _lock_user_for_quota(db: Session, user_id: int) -> None:
+    """Serialize quota checks for the same user on locking-capable databases."""
+    db.query(User.id).filter(User.id == user_id).with_for_update().one()
+
+
 def enforce_monthly_token_quota(
     db: Session,
     *,
@@ -51,6 +57,7 @@ def enforce_monthly_token_quota(
 
 
 def enforce_plan_quota(db: Session, *, user_id: int, policy: PlanPolicy) -> None:
+    _lock_user_for_quota(db, user_id)
     since = _month_start()
     if policy.monthly_token_limit is not None:
         enforce_monthly_token_quota(
