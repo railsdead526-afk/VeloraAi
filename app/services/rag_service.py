@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import Iterable
 
 import httpx
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
