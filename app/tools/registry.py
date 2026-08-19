@@ -37,3 +37,6 @@ class ToolRegistry:
             }
             for tool in self._tools.values()
         ]
+
+
+registry = ToolRegistry()
