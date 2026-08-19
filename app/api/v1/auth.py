@@ -50,7 +50,7 @@ def read_users_me(current_user=Depends(get_current_user)):
 
 
 @router.get("/premium-only", response_model=UserResponse)
-def premium_only(current_user=Depends(require_roles("premium", "admin"))):
+def premium_only(current_user=Depends(require_roles("pro", "max", "admin"))):
     return current_user
 
 
