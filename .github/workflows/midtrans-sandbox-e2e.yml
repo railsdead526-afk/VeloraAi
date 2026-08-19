@@ -8,7 +8,6 @@ permissions:
 
 jobs:
   sandbox-e2e:
-    if: ${{ secrets.MIDTRANS_SERVER_KEY != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -32,5 +31,19 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Check Sandbox credentials
+        id: credentials
+        shell: bash
+        run: |
+          if [[ -z "$MIDTRANS_SERVER_KEY" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "MIDTRANS_SERVER_KEY is not configured; skipping real Sandbox E2E."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run Midtrans Sandbox E2E
+        if: steps.credentials.outputs.available == 'true'
         run: pytest -q tests/test_midtrans_sandbox_e2e.py -m midtrans_e2e
+      - name: Explain skipped Sandbox E2E
+        if: steps.credentials.outputs.available != 'true'
+        run: echo "Sandbox E2E skipped. Add the MIDTRANS_SERVER_KEY GitHub secret to enable real gateway tests."
