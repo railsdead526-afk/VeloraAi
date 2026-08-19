@@ -16,6 +16,7 @@ async def execute_tool(
     arguments: dict[str, Any],
     plan: str,
     confirmed: bool = False,
+    call_counts: dict[str, int] | None = None,
 ) -> Any:
     tool = registry.get(name)
 
@@ -24,11 +25,17 @@ async def execute_tool(
     if tool.requires_confirmation and not confirmed:
         raise ToolExecutionError("Tool execution requires user confirmation")
 
+    counts = call_counts if call_counts is not None else {}
+    used = counts.get(name, 0)
+    if used >= tool.max_calls_per_request:
+        raise ToolExecutionError("Tool call limit exceeded for this request")
+    counts[name] = used + 1
+
     try:
         result = tool.handler(arguments)
         if inspect.isawaitable(result):
             return await asyncio.wait_for(result, timeout=tool.timeout_seconds)
-        return result
+        return await asyncio.wait_for(asyncio.to_thread(lambda: result), timeout=tool.timeout_seconds)
     except asyncio.TimeoutError as exc:
         raise ToolExecutionError("Tool execution timed out") from exc
     except ToolExecutionError:
