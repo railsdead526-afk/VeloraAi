@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -59,7 +60,7 @@ def process_document_index(document_id: int) -> None:
         document.content_hash = content_hash(normalized)
         document.status = "ready"
         document.last_index_error = None
-        document.last_indexed_at = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        document.last_indexed_at = datetime.now(timezone.utc)
         db.commit()
     except Exception as exc:
         db.rollback()
