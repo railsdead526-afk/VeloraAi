@@ -72,10 +72,7 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
-    if (!activeChat) {
-      setMessages([])
-      return
-    }
+    if (!activeChat) return
 
     const loadMessages = async () => {
       try {
@@ -90,8 +87,7 @@ export default function Chat() {
 
     void loadMessages()
 
-    if (isMobile) setSidebarOpen(false)
-  }, [activeChat, isMobile])
+  }, [activeChat])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -145,7 +141,6 @@ export default function Chat() {
       setActiveChat(chat.id)
       setMessages([])
       setError('')
-      if (isMobile) setSidebarOpen(false)
     } catch (createError) {
       console.error(createError)
       setError(createError instanceof Error ? createError.message : 'Failed to create conversation')
@@ -154,7 +149,6 @@ export default function Chat() {
 
   const selectChat = (chatId: number) => {
     setActiveChat(chatId)
-    if (isMobile) setSidebarOpen(false)
   }
 
   const parseStream = async (response: Response, conversationId: number, userMessage: Message) => {
