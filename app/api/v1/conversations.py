@@ -24,7 +24,7 @@ from app.schemas.message import MessageCreate, MessageResponse, ChatReplyRespons
 from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
 from app.services.ai_tool_loop import generate_ai_reply_with_tools
 from app.services.quota_service import QuotaExceededError, enforce_plan_quota
-from app.tools.runtime import tool_registry
+from app.tools.bootstrap import get_registry
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -95,7 +95,7 @@ def send_message(conversation_id: int, payload: MessageCreate, db: Session = Dep
                 history_payload,
                 plan=getattr(current_user, "role", "free"),
                 confirmed=payload.confirm_tools,
-                registry=tool_registry,
+                registry=get_registry(),
             )
         else:
             ai_result = generate_ai_reply_from_history(history_payload)
