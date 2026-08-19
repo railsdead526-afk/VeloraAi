@@ -1,17 +1,10 @@
-import os
 from datetime import UTC, datetime, timedelta
 
-from dotenv import load_dotenv
 from jose import jwt
 from passlib.context import CryptContext
 
-load_dotenv()
+from app.core.config import settings
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-key")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(
-    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
-)
 
 pwd_context = CryptContext(
     schemes=["pbkdf2_sha256"],
@@ -34,12 +27,11 @@ def create_access_token(
     to_encode = data.copy()
     expire = datetime.now(UTC) + (
         expires_delta
-        or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        or timedelta(minutes=settings.access_token_expire_minutes)
     )
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-
+    return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
