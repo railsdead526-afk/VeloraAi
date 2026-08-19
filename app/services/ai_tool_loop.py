@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 4
 MAX_TOOLS_PER_REQUEST = 12
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
 def _tool_message(tool_call_id: str, result: Any) -> dict[str, str]:
@@ -62,6 +63,43 @@ def _run_tool(
     )
 
 
+def _is_retryable_http_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        return status_code in RETRYABLE_STATUS_CODES
+    return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.RemoteProtocolError))
+
+
+def _post_completion_sync(client: httpx.Client, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+    attempts = settings.ai_max_retries + 1
+    for attempt in range(attempts):
+        try:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            if attempt >= attempts - 1 or not _is_retryable_http_error(exc):
+                raise
+            logger.warning("Retrying AI provider request", extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries})
+            continue
+    raise RuntimeError("AI provider request failed")
+
+
+async def _post_completion_async(client: httpx.AsyncClient, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+    attempts = settings.ai_max_retries + 1
+    for attempt in range(attempts):
+        try:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            if attempt >= attempts - 1 or not _is_retryable_http_error(exc):
+                raise
+            logger.warning("Retrying async AI provider request", extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries})
+            continue
+    raise RuntimeError("AI provider request failed")
+
+
 def generate_ai_reply_with_tools(
     messages: list[dict],
     *,
@@ -102,13 +140,12 @@ def generate_ai_reply_with_tools(
         }
         try:
             with httpx.Client(timeout=httpx.Timeout(settings.ai_timeout_seconds)) as client:
-                response = client.post(
+                data = _post_completion_sync(
+                    client,
                     f"{base_url}/chat/completions",
                     headers=headers,
-                    json=payload,
+                    payload=payload,
                 )
-                response.raise_for_status()
-                data = response.json()
         except (httpx.HTTPError, ValueError) as exc:
             logger.exception("AI tool-loop request failed")
             raise RuntimeError("AI service temporarily unavailable") from exc
@@ -203,13 +240,12 @@ async def generate_ai_reply_with_tools_async(
                 "tool_choice": "auto",
             }
             try:
-                response = await client.post(
+                data = await _post_completion_async(
+                    client,
                     f"{base_url}/chat/completions",
                     headers=headers,
-                    json=payload,
+                    payload=payload,
                 )
-                response.raise_for_status()
-                data = response.json()
             except (httpx.HTTPError, ValueError) as exc:
                 logger.exception("Async AI tool-loop request failed")
                 raise RuntimeError("AI service temporarily unavailable") from exc
