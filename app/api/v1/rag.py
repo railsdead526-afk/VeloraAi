@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
 from app.services.document_ingestion import DocumentExtractionError, extract_text
-from app.services.rag_service import RAGError, ingest_text, retrieve_chunks
+from app.services.rag_service import DuplicateDocumentError, RAGError, delete_document, ingest_text, reindex_document, retrieve_chunks
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -23,6 +23,8 @@ def create_document(payload: DocumentCreate, db: Session = Depends(get_db), curr
             source=payload.source,
             mime_type=payload.mime_type,
         )
+    except DuplicateDocumentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RAGError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
@@ -44,6 +46,8 @@ def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db),
         )
     except HTTPException:
         raise
+    except DuplicateDocumentError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except DocumentExtractionError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RAGError as exc:
@@ -58,6 +62,24 @@ def list_documents(db: Session = Depends(get_db), current_user=Depends(get_curre
         .order_by(Document.created_at.desc())
         .all()
     )
+
+
+@router.post("/documents/{document_id}/reindex", response_model=DocumentResponse)
+def reindex_one_document(document_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    try:
+        return reindex_document(db, user_id=current_user.id, document_id=document_id)
+    except RAGError as exc:
+        status_code = status.HTTP_404_NOT_FOUND if str(exc) == "Document not found" else status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_one_document(document_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    try:
+        delete_document(db, user_id=current_user.id, document_id=document_id)
+    except RAGError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return None
 
 
 @router.post("/search", response_model=list[DocumentSearchResult])
