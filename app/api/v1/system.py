@@ -1,7 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.schemas.system import MessageRequest, GreetRequest, GreetResponse
+from app.core.database import get_db
 
 router = APIRouter(tags=["System"])
 
@@ -15,6 +17,23 @@ def health_check():
     }
 
 
+@router.get("/ready")
+def readiness_check(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database is unavailable",
+        ) from exc
+
+    return {
+        "status": "ready",
+        "service": settings.app_name,
+        "environment": settings.app_env,
+    }
+
+
 @router.get("/info")
 def app_info():
     return {
@@ -23,21 +42,6 @@ def app_info():
         "environment": settings.app_env,
         "ai_provider": settings.ai_provider,
     }
-
-
-@router.get("/hello/{name}")
-def say_hello(name: str):
-    return {"message": f"Hello, {name}!"}
-
-
-@router.post("/echo")
-def echo_message(payload: MessageRequest):
-    return {"you_sent": payload.message}
-
-
-@router.post("/greet", response_model=GreetResponse)
-def greet_user(payload: GreetRequest):
-    return {"reply": f"Halo {payload.name}, kamu bilang: {payload.message}"}
 
 
 @router.get("/search")
