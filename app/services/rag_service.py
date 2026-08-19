@@ -4,7 +4,7 @@ import re
 from typing import Iterable
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -90,22 +90,77 @@ def ingest_text(db: Session, *, user_id: int, name: str, text: str, source: str 
     return document
 
 
-def retrieve_chunks(db: Session, *, user_id: int, query: str, limit: int = 5) -> list[tuple[DocumentChunk, float]]:
-    query = query.strip()
-    if not query:
-        return []
-    limit = min(max(limit, 1), 20)
-    query_embedding = embed_texts([query])[0]
+def _vector_candidates(db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int) -> list[tuple[DocumentChunk, float]]:
     distance = DocumentChunk.embedding.cosine_distance(query_embedding)
     statement = (
         select(DocumentChunk, distance.label("distance"))
         .join(DocumentChunk.document)
-        .where(Document.user_id == user_id, Document.status == "ready")
+        .where(Document.user_id == user_id, Document.status == "ready", DocumentChunk.embedding.is_not(None))
         .order_by(distance)
-        .limit(limit)
+        .limit(candidate_limit)
     )
-    rows = db.execute(statement).all()
-    return [(chunk, float(distance_value)) for chunk, distance_value in rows]
+    return [(chunk, float(distance_value)) for chunk, distance_value in db.execute(statement).all()]
+
+
+def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limit: int) -> list[DocumentChunk]:
+    terms = [term for term in re.findall(r"[\w.-]+", query.lower()) if len(term) >= 2][:8]
+    if not terms:
+        return []
+    conditions = [func.lower(DocumentChunk.content).contains(term) for term in terms]
+    statement = (
+        select(DocumentChunk)
+        .join(DocumentChunk.document)
+        .where(Document.user_id == user_id, Document.status == "ready", or_(*conditions))
+        .limit(candidate_limit * 2)
+    )
+    rows = list(db.execute(statement).scalars())
+    query_terms = set(terms)
+    rows.sort(
+        key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()),
+        reverse=True,
+    )
+    return rows[:candidate_limit]
+
+
+def hybrid_retrieve_chunks(
+    db: Session,
+    *,
+    user_id: int,
+    query: str,
+    limit: int = 5,
+    candidate_limit: int = 20,
+) -> list[tuple[DocumentChunk, float]]:
+    query = query.strip()
+    if not query:
+        return []
+    limit = min(max(limit, 1), 20)
+    candidate_limit = min(max(candidate_limit, limit), 50)
+
+    query_embedding = embed_texts([query])[0]
+    vector_rows = _vector_candidates(db, user_id=user_id, query_embedding=query_embedding, candidate_limit=candidate_limit)
+    keyword_rows = _keyword_candidates(db, user_id=user_id, query=query, candidate_limit=candidate_limit)
+
+    fused: dict[int, float] = {}
+    chunks: dict[int, DocumentChunk] = {}
+    distances: dict[int, float] = {}
+    rrf_k = 60.0
+
+    for rank, (chunk, distance) in enumerate(vector_rows, start=1):
+        fused[chunk.id] = fused.get(chunk.id, 0.0) + 1.0 / (rrf_k + rank)
+        chunks[chunk.id] = chunk
+        distances[chunk.id] = distance
+
+    for rank, chunk in enumerate(keyword_rows, start=1):
+        fused[chunk.id] = fused.get(chunk.id, 0.0) + 1.0 / (rrf_k + rank)
+        chunks[chunk.id] = chunk
+        distances.setdefault(chunk.id, 1.0)
+
+    ranked = sorted(fused.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [(chunks[chunk_id], distances.get(chunk_id, 1.0)) for chunk_id, _score in ranked]
+
+
+def retrieve_chunks(db: Session, *, user_id: int, query: str, limit: int = 5) -> list[tuple[DocumentChunk, float]]:
+    return hybrid_retrieve_chunks(db, user_id=user_id, query=query, limit=limit)
 
 
 def build_context(results: list[tuple[DocumentChunk, float]]) -> str:
