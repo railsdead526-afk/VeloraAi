@@ -32,18 +32,28 @@ class Settings:
         return self.app_env == "production"
 
     def validate(self) -> None:
+        if self.access_token_expire_minutes < 1:
+            raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero")
         if self.ai_max_history_messages < 1:
             raise RuntimeError("AI_MAX_HISTORY_MESSAGES must be greater than zero")
         if self.ai_timeout_seconds <= 0:
             raise RuntimeError("AI_TIMEOUT_SECONDS must be greater than zero")
         if self.ai_max_retries < 0 or self.ai_max_retries > 5:
             raise RuntimeError("AI_MAX_RETRIES must be between 0 and 5")
+        if self.ai_provider not in {"mock", "openai"}:
+            raise RuntimeError("AI_PROVIDER must be either mock or openai")
 
         if self.is_production:
             if not self.secret_key or self.secret_key == "change-this-secret-key":
                 raise RuntimeError("SECRET_KEY must be configured in production")
+            if len(self.secret_key) < 32:
+                raise RuntimeError("SECRET_KEY must be at least 32 characters in production")
+            if self.algorithm != "HS256":
+                raise RuntimeError("Only HS256 is currently supported")
             if self.app_debug:
                 raise RuntimeError("APP_DEBUG must be false in production")
+            if not self.database_url.startswith(("postgresql://", "postgresql+psycopg2://")):
+                raise RuntimeError("Production DATABASE_URL must use PostgreSQL")
             if self.ai_provider == "openai" and not self.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY must be configured when AI_PROVIDER=openai")
             if self.rate_limit_storage_uri == "memory://":
