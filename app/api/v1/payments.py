@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -14,8 +15,6 @@ from app.services.billing_service import apply_payment_notification, create_paym
 from app.services.midtrans_service import MidtransError, MidtransService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
-
-
 CHECKOUT_FILE = Path(__file__).resolve().parents[2] / "static" / "checkout.html"
 
 
@@ -61,8 +60,13 @@ def create_payment(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    amount = _plan_amount(payload.plan)
-    payment = create_payment_intent(db, user_id=current_user.id, plan=payload.plan, amount=amount, provider="midtrans")
+    payment = create_payment_intent(
+        db,
+        user_id=current_user.id,
+        plan=payload.plan,
+        amount=_plan_amount(payload.plan),
+        provider="midtrans",
+    )
     try:
         result = MidtransService().create_snap_transaction(
             order_id=payment.provider_order_id,
@@ -72,7 +76,6 @@ def create_payment(
         )
     except MidtransError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
     payment.snap_token = result["token"]
     db.commit()
     return PaymentCreateResponse(
@@ -101,7 +104,12 @@ def payment_notification(payload: dict, db: Session = Depends(get_db)):
 
     try:
         midtrans = MidtransService()
-        if not midtrans.verify_notification_signature(order_id=order_id, status_code=status_code, gross_amount=gross_amount, signature_key=signature_key):
+        if not midtrans.verify_notification_signature(
+            order_id=order_id,
+            status_code=status_code,
+            gross_amount=gross_amount,
+            signature_key=signature_key,
+        ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid payment signature")
         verified = midtrans.get_transaction_status(order_id)
     except MidtransError as exc:
@@ -144,7 +152,6 @@ def refund_payment(
     refund_amount = payment.amount - payment.refund_amount
     if refund_amount <= 0:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded")
-
     try:
         result = MidtransService().refund_transaction(payment.provider_order_id, refund_amount, "VeloraAi admin refund")
     except MidtransError as exc:
@@ -154,7 +161,7 @@ def refund_payment(
     payment.refund_status = str(result.get("status_code", result.get("status", "pending")))
     payment.refund_transaction_id = result.get("refund_key") or result.get("transaction_id")
     if payment.refund_status in {"settlement", "200"}:
-        payment.refunded_at = payment.refunded_at or __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+        payment.refunded_at = payment.refunded_at or datetime.now(timezone.utc)
         payment.status = "refunded"
         if payment.subscription is not None:
             payment.subscription.status = "canceled"
