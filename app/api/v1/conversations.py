@@ -114,7 +114,8 @@ def list_conversation_messages(conversation_id: int, db: Session = Depends(get_d
 
 
 @router.post("/{conversation_id}/messages", response_model=ChatReplyResponse, status_code=status.HTTP_201_CREATED)
-def send_message(conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+@limiter.limit(settings.rate_limit_chat)
+def send_message(request: Request, conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
