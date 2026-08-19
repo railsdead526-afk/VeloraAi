@@ -100,3 +100,26 @@ class MidtransService:
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise MidtransError("Unable to query Midtrans transaction status") from exc
+
+    def refund_transaction(self, order_id: str, amount: int, reason: str) -> dict:
+        payload = {
+            "refund_key": f"velora-refund-{order_id}",
+            "amount": amount,
+            "reason": reason[:255],
+        }
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": self._authorization,
+        }
+        try:
+            response = httpx.post(
+                f"{self.base_url}/v2/{order_id}/refunds",
+                headers=headers,
+                json=payload,
+                timeout=settings.payment_timeout_seconds,
+            )
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise MidtransError("Unable to create Midtrans refund") from exc
