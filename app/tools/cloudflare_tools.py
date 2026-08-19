@@ -1,0 +1,88 @@
+import os
+from typing import Any
+from urllib.parse import quote
+
+from app.tools.providers import ToolProviderError, _request
+
+
+def _token() -> str:
+    token = os.getenv("CLOUDFLARE_API_TOKEN", "")
+    if not token:
+        raise ToolProviderError("CLOUDFLARE_API_TOKEN is not configured")
+    return token
+
+
+def _zone(arguments: dict[str, Any]) -> str:
+    zone = str(arguments.get("zone_id", "")).strip()
+    if not zone:
+        raise ToolProviderError("zone_id is required")
+    return zone
+
+
+def cloudflare_list_dns_records(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    zone = _zone(arguments)
+    query = str(arguments.get("name", "")).strip()
+    url = f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records?per_page=100"
+    if query:
+        url += f"&name={quote(query, safe='')}"
+    return _request("GET", url, token=token)
+
+
+def cloudflare_create_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    zone = _zone(arguments)
+    record_type = str(arguments.get("type", "")).upper()
+    name = str(arguments.get("name", "")).strip()
+    content = str(arguments.get("content", "")).strip()
+    if record_type not in {"A", "AAAA", "CNAME", "TXT", "MX", "NS"}:
+        raise ToolProviderError("unsupported DNS record type")
+    if not name or not content:
+        raise ToolProviderError("name and content are required")
+    payload = {
+        "type": record_type,
+        "name": name,
+        "content": content,
+        "ttl": int(arguments.get("ttl", 1)),
+        "proxied": bool(arguments.get("proxied", False)),
+    }
+    if record_type == "MX":
+        payload["priority"] = int(arguments.get("priority", 10))
+    return _request(
+        "POST",
+        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records",
+        token=token,
+        json=payload,
+    )
+
+
+def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    zone = _zone(arguments)
+    record = str(arguments.get("record_id", "")).strip()
+    if not record:
+        raise ToolProviderError("record_id is required")
+    payload = {key: arguments[key] for key in ("type", "name", "content", "ttl", "proxied") if key in arguments}
+    if "type" in payload:
+        payload["type"] = str(payload["type"]).upper()
+    if not payload:
+        raise ToolProviderError("at least one DNS field is required")
+    return _request(
+        "PATCH",
+        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records/{quote(record, safe='')}",
+        token=token,
+        json=payload,
+    )
+
+
+def cloudflare_delete_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
+    token = _token()
+    zone = _zone(arguments)
+    record = str(arguments.get("record_id", "")).strip()
+    if not record:
+        raise ToolProviderError("record_id is required")
+    return _request(
+        "DELETE",
+        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records/{quote(record, safe='')}",
+        token=token,
+    )
