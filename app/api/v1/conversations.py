@@ -82,6 +82,22 @@ def _history_with_rag_context(db: Session, *, user_id: int, history_payload: lis
 def create_new_conversation(payload: ConversationCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return create_conversation(db, user_id=current_user.id, title=payload.title or "New Chat")
 
+@router.get("/{conversation_id}", response_model=ConversationResponse)
+def get_conversation_detail(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    conversation = get_conversation_by_id(db, conversation_id)
+
+    if not conversation or conversation.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+
+    return conversation
+
 
 @router.get("", response_model=list[ConversationResponse])
 def list_my_conversations(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
