@@ -2,6 +2,7 @@ import asyncio
 import inspect
 from typing import Any
 
+from app.services.tool_validation import ToolArgumentValidationError, validate_tool_arguments
 from app.tools.registry import ToolRegistry
 
 
@@ -22,6 +23,12 @@ async def execute_tool(
 
     if not tool.allows_plan(plan):
         raise ToolExecutionError("Tool is not available for this plan")
+
+    try:
+        arguments = validate_tool_arguments(tool, arguments)
+    except ToolArgumentValidationError as exc:
+        raise ToolExecutionError(str(exc)) from exc
+
     if tool.requires_confirmation and not confirmed:
         raise ToolExecutionError("Tool execution requires user confirmation")
 
