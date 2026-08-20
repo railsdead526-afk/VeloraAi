@@ -56,6 +56,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (response.status === 401) {
     clearAuthToken()
+    window.dispatchEvent(new Event('velora-auth-expired'))
     throw new Error('Your session has expired. Please sign in again.')
   }
 
