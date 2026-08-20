@@ -74,8 +74,11 @@ def stream_native_message(
                 async for event in stream_ai_reply_with_tools(
                     history_payload,
                     plan=plan,
-                    confirmed=payload.confirm_tools,
+                    confirmed=False,
                     registry=get_registry(),
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    approved_confirmation_token=payload.tool_confirmation_token,
                 ):
                     event_payload = {"type": event.type}
                     if event.content:
@@ -85,6 +88,8 @@ def stream_native_message(
                         event_payload["name"] = event.name
                     if event.tool_call_id:
                         event_payload["tool_call_id"] = event.tool_call_id
+                    if event.confirmation_token:
+                        event_payload["confirmation_token"] = event.confirmation_token
                     if event.type == "done":
                         usage.update(
                             {
