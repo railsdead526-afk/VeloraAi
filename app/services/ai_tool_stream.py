@@ -10,6 +10,7 @@ import httpx
 
 from app.core.config import settings
 from app.services.ai_service import _build_api_messages, _parse_usage, _provider_config
+from app.services.tool_confirmation import create_confirmation_token, verify_confirmation_token
 from app.tools.executor import ToolExecutionError, execute_tool
 from app.tools.registry import ToolRegistry
 from app.tools.selector import select_tools
@@ -30,6 +31,7 @@ class AgentStreamEvent:
     model: str | None = None
     name: str | None = None
     tool_call_id: str | None = None
+    confirmation_token: str | None = None
 
 
 def _tool_message(tool_call_id: str, result: Any) -> dict[str, str]:
@@ -88,6 +90,9 @@ async def stream_ai_reply_with_tools(
     plan: str,
     confirmed: bool,
     registry: ToolRegistry,
+    user_id: int | None = None,
+    conversation_id: int | None = None,
+    approved_confirmation_token: str | None = None,
 ) -> AsyncIterator[AgentStreamEvent]:
     if settings.ai_provider == "mock":
         from app.services.ai_service import _mock_result
@@ -242,29 +247,52 @@ async def stream_ai_reply_with_tools(
                     result = {"error": "Tool is not available in the current tool context"}
                 else:
                     tool = registry.get(name)
-                    if tool.requires_confirmation and not confirmed:
-                        confirmation_required = True
-                        yield AgentStreamEvent(
-                            type="tool_confirmation_required",
-                            name=name,
-                            tool_call_id=tool_call_id,
-                        )
-                        result = {"error": "Tool execution requires user confirmation"}
-                    else:
-                        try:
-                            arguments = _parse_tool_arguments(call["function"]["arguments"])
+                    try:
+                        arguments = _parse_tool_arguments(call["function"]["arguments"])
+                        approved = False
+                        if not tool.requires_confirmation:
+                            approved = True
+                        elif confirmed:
+                            approved = True
+                        elif user_id is not None and conversation_id is not None:
+                            approved = verify_confirmation_token(
+                                approved_confirmation_token,
+                                user_id=user_id,
+                                conversation_id=conversation_id,
+                                tool_name=name,
+                                arguments=arguments,
+                            )
+
+                        if not approved:
+                            confirmation_required = True
+                            confirmation_token = None
+                            if user_id is not None and conversation_id is not None:
+                                confirmation_token = create_confirmation_token(
+                                    user_id=user_id,
+                                    conversation_id=conversation_id,
+                                    tool_name=name,
+                                    arguments=arguments,
+                                )
+                            yield AgentStreamEvent(
+                                type="tool_confirmation_required",
+                                name=name,
+                                tool_call_id=tool_call_id,
+                                confirmation_token=confirmation_token,
+                            )
+                            result = {"error": "Tool execution requires user confirmation"}
+                        else:
                             result = await execute_tool(
                                 registry,
                                 name=name,
                                 arguments=arguments,
                                 plan=plan,
-                                confirmed=confirmed,
+                                confirmed=approved,
                                 call_counts=call_counts,
                             )
-                        except asyncio.CancelledError:
-                            raise
-                        except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
-                            result = {"error": str(exc)}
+                    except asyncio.CancelledError:
+                        raise
+                    except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
+                        result = {"error": str(exc)}
 
                 api_messages.append(_tool_message(tool_call_id, result))
                 yield AgentStreamEvent(type="tool_end", name=name, tool_call_id=tool_call_id)
