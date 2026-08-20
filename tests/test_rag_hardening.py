@@ -32,10 +32,10 @@ def test_reindex_resets_failure_metadata(db):
     assert result.indexing_attempts == 3
 
 
-def test_embedding_usage_summary_tracks_query_embeddings(db):
+def test_embedding_usage_summary_tracks_query_embeddings(db, user):
     record_embedding_usage(
         db,
-        user_id=7,
+        user_id=user.id,
         document_id=None,
         provider="openai",
         model="text-embedding-3-small",
@@ -43,7 +43,7 @@ def test_embedding_usage_summary_tracks_query_embeddings(db):
         item_count=1,
     )
 
-    summary = embedding_usage_summary(db, user_id=7)
+    summary = embedding_usage_summary(db, user_id=user.id)
 
     assert summary == {"input_tokens": 25, "item_count": 1, "requests": 1}
 
