@@ -99,33 +99,39 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
         )
     )
 
-    first_round = [
-        _sse({
-            "choices": [{
+    first_delta = {
+        "choices": [
+            {
                 "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call-1",
-                        "function": {
-                            "name": "github_list_repositories",
-                            "arguments": '{"lim',
-                        },
-                    }]
-                }
-            }]
-        }),
-        _sse({
-            "choices": [{
-                "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "function": {"arguments": 'it": 1}'},
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-1",
+                            "function": {
+                                "name": "github_list_repositories",
+                                "arguments": '{"lim',
+                            },
+                        }
                     ]
                 }
-            }]
-        }),
-        "data: [DONE]",
-    ]
+            }
+        ]
+    }
+    second_delta = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "function": {"arguments": 'it": 1}'},
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    first_round = [_sse(first_delta), _sse(second_delta), "data: [DONE]"]
     second_round = [
         _sse({"choices": [{"delta": {"content": "Found VeloraAi."}}]}),
         _sse({"usage": {"prompt_tokens": 10, "completion_tokens": 4}}),
@@ -172,20 +178,25 @@ async def test_native_stream_emits_confirmation_required_without_execution(monke
         )
     )
 
-    response_lines = [
-        _sse({
-            "choices": [{
+    tool_request = {
+        "choices": [
+            {
                 "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call-2",
-                        "function": {"name": "dangerous_write", "arguments": "{}"},
-                    }]
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-2",
+                            "function": {
+                                "name": "dangerous_write",
+                                "arguments": "{}",
+                            },
+                        }
+                    ]
                 }
-            }]
-        }),
-        "data: [DONE]",
-    ]
+            }
+        ]
+    }
+    response_lines = [_sse(tool_request), "data: [DONE]"]
     fake_client = _FakeClient([response_lines])
     monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: fake_client)
 
