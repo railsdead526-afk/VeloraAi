@@ -7,6 +7,10 @@ from app.tools.base import ToolDefinition
 from app.tools.registry import ToolRegistry
 
 
+def _sse(payload):
+    return "data: " + json.dumps(payload)
+
+
 @pytest.mark.asyncio
 async def test_native_stream_emits_tokens_and_done_for_mock_provider(monkeypatch):
     monkeypatch.setattr("app.services.ai_tool_stream.settings.ai_provider", "mock")
@@ -96,13 +100,35 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
     )
 
     first_round = [
-        "data: " + json.dumps({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call-1", "function": {"name": "github_list_repositories", "arguments": '{"lim'}}]}}]}]}),
-        "data: " + json.dumps({"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": 'it": 1}'}}]}}]}),
+        _sse({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call-1",
+                        "function": {
+                            "name": "github_list_repositories",
+                            "arguments": '{"lim',
+                        },
+                    }]
+                }
+            }]
+        }),
+        _sse({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "function": {"arguments": 'it": 1}'},
+                    ]
+                }
+            }]
+        }),
         "data: [DONE]",
     ]
     second_round = [
-        "data: " + json.dumps({"choices": [{"delta": {"content": "Found VeloraAi."}}]}),
-        "data: " + json.dumps({"usage": {"prompt_tokens": 10, "completion_tokens": 4}}),
+        _sse({"choices": [{"delta": {"content": "Found VeloraAi."}}]}),
+        _sse({"usage": {"prompt_tokens": 10, "completion_tokens": 4}}),
         "data: [DONE]",
     ]
 
@@ -147,7 +173,17 @@ async def test_native_stream_emits_confirmation_required_without_execution(monke
     )
 
     response_lines = [
-        "data: " + json.dumps({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call-2", "function": {"name": "dangerous_write", "arguments": '{}'}}]}}]}),
+        _sse({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": "call-2",
+                        "function": {"name": "dangerous_write", "arguments": "{}"},
+                    }]
+                }
+            }]
+        }),
         "data: [DONE]",
     ]
     fake_client = _FakeClient([response_lines])
