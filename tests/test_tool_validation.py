@@ -44,7 +44,7 @@ def test_validate_rejects_unknown_fields():
         "additionalProperties": False,
     })
 
-    with pytest.raises(ToolArgumentValidationError, match="additional properties"):
+    with pytest.raises(ToolArgumentValidationError, match="Additional properties"):
         validate_tool_arguments(tool, {"limit": 10, "token": "secret"})
 
 
