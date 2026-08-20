@@ -13,11 +13,12 @@ class ToolArgumentValidationError(ValueError):
 
 def validate_tool_arguments(tool: ToolDefinition, arguments: dict[str, Any]) -> dict[str, Any]:
     try:
+        Draft202012Validator.check_schema(tool.parameters)
         validator = Draft202012Validator(tool.parameters)
+        errors = sorted(validator.iter_errors(arguments), key=lambda error: list(error.path))
     except SchemaError as exc:
         raise ToolArgumentValidationError("Tool parameter schema is invalid") from exc
 
-    errors = sorted(validator.iter_errors(arguments), key=lambda error: list(error.path))
     if errors:
         first = errors[0]
         path = ".".join(str(part) for part in first.path)
