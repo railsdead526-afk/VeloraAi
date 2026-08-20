@@ -70,8 +70,10 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-app.include_router(conversations.router, prefix="/api/v1")
+# Native agent streaming must win for the canonical /messages/stream route.
+# The legacy conversations router still exposes the old implementation as a fallback.
 app.include_router(agent_stream.router, prefix="/api/v1")
+app.include_router(conversations.router, prefix="/api/v1")
 app.include_router(system.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
