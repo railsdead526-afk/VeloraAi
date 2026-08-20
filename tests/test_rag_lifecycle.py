@@ -31,13 +31,25 @@ def test_ingest_document_rejects_duplicate_content(db, users):
 
 def test_reindex_queues_and_job_rebuilds_chunks(db, users):
     owner, _ = users
-    with patch("app.services.rag_service.embed_texts", return_value=[[0.0] * 1536]):
+
+    def mock_embed(texts, *, return_metadata=False):
+        vectors = [[0.0] * 1536 for _ in texts]
+        if return_metadata:
+            return vectors, {
+                "provider": "test",
+                "model": "test-embedding",
+                "input_tokens": 0,
+            }
+        return vectors
+
+    with patch("app.services.rag_service.embed_texts", side_effect=mock_embed), \
+         patch("app.services.rag_jobs.embed_texts", side_effect=mock_embed):
         document = ingest_text(db, user_id=owner.id, name="one", text="first content")
         document.raw_text = "changed content"
         db.commit()
         queued = reindex_document(db, user_id=owner.id, document_id=document.id)
         assert queued.status == "queued"
-        process_document_index(document.id)
+        process_document_index(document.id, db=db)
 
     db.refresh(document)
     assert document.status == "ready"
