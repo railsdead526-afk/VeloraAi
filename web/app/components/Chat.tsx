@@ -18,6 +18,21 @@ import {
   type User,
 } from '../../lib/api'
 
+interface PendingConfirmation {
+  conversationId: number
+  content: string
+  useRag: boolean
+  toolName: string
+  toolCallId?: string
+  tempMessageId: number
+}
+
+interface StreamResult {
+  confirmationRequired: boolean
+  toolName?: string
+  toolCallId?: string
+}
+
 function toClientMessage(message: Message): Message {
   return message
 }
@@ -38,6 +53,8 @@ export default function Chat() {
   const [useRag, setUseRag] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
+  const [toolActivity, setToolActivity] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -58,6 +75,8 @@ export default function Chat() {
       setActiveChat(null)
       setInput('')
       setError('Your session has expired. Please sign in again.')
+      setPendingConfirmation(null)
+      setToolActivity('')
       setLoading(false)
       setAuthLoading(false)
     })
@@ -96,6 +115,8 @@ export default function Chat() {
       try {
         const history = await getMessages(activeChat)
         setMessages(history.map(toClientMessage))
+        setPendingConfirmation(null)
+        setToolActivity('')
         setError('')
       } catch (loadError) {
         console.error(loadError)
@@ -119,6 +140,8 @@ export default function Chat() {
     setMessages([])
     setActiveChat(null)
     setInput('')
+    setPendingConfirmation(null)
+    setToolActivity('')
     setLoading(false)
   }
 
@@ -144,6 +167,8 @@ export default function Chat() {
       setChats(conversations)
       setActiveChat(conversations[0]?.id ?? null)
       setMessages([])
+      setPendingConfirmation(null)
+      setToolActivity('')
     } catch (authErrorValue) {
       setAuthError(authErrorValue instanceof Error ? authErrorValue.message : 'Authentication failed')
     } finally {
@@ -159,6 +184,8 @@ export default function Chat() {
       setChats((current) => [chat, ...current])
       setActiveChat(chat.id)
       setMessages([])
+      setPendingConfirmation(null)
+      setToolActivity('')
       setError('')
     } catch (createError) {
       console.error(createError)
@@ -167,10 +194,19 @@ export default function Chat() {
   }
 
   const selectChat = (chatId: number) => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setPendingConfirmation(null)
+    setToolActivity('')
+    setLoading(false)
     setActiveChat(chatId)
   }
 
-  const parseStream = async (response: Response, conversationId: number, userMessage: Message) => {
+  const parseStream = async (
+    response: Response,
+    conversationId: number,
+    userMessage: Message,
+  ): Promise<StreamResult> => {
     if (!response.body) throw new Error('Streaming response is unavailable')
 
     const reader = response.body.getReader()
@@ -179,6 +215,9 @@ export default function Chat() {
     let buffer = ''
     let assistantId = assistantPlaceholderId
     let assistantContent = ''
+    let confirmationRequired = false
+    let confirmationToolName = ''
+    let confirmationToolCallId = ''
 
     setMessages((current) => [
       ...current.filter((message) => message.id !== userMessage.id),
@@ -196,10 +235,12 @@ export default function Chat() {
       if (!line.startsWith('data: ')) return
 
       const payload = JSON.parse(line.slice(6)) as {
-        type?: 'token' | 'done' | 'error'
+        type?: 'token' | 'tool_start' | 'tool_confirmation_required' | 'tool_end' | 'done' | 'error'
         content?: string
         detail?: string
         message_id?: number
+        name?: string
+        tool_call_id?: string
       }
 
       if (payload.type === 'token' && payload.content) {
@@ -209,6 +250,21 @@ export default function Chat() {
             message.id === assistantId ? { ...message, content: assistantContent } : message,
           ),
         )
+      }
+
+      if (payload.type === 'tool_start') {
+        setToolActivity(payload.name ? `Using ${payload.name}…` : 'Using a tool…')
+      }
+
+      if (payload.type === 'tool_confirmation_required') {
+        confirmationRequired = true
+        confirmationToolName = payload.name || 'a protected tool'
+        confirmationToolCallId = payload.tool_call_id || ''
+        setToolActivity('')
+      }
+
+      if (payload.type === 'tool_end') {
+        setToolActivity('')
       }
 
       if (payload.type === 'done' && payload.message_id) {
@@ -240,15 +296,83 @@ export default function Chat() {
     }
 
     if (buffer.trim()) processLine(buffer.trim())
+
+    return {
+      confirmationRequired,
+      toolName: confirmationToolName || undefined,
+      toolCallId: confirmationToolCallId || undefined,
+    }
+  }
+
+  const streamConversation = async (
+    conversationId: number,
+    content: string,
+    confirmTools: boolean,
+    tempMessageId?: number,
+  ) => {
+    const userMessage: Message = {
+      id: tempMessageId ?? -Date.now(),
+      conversation_id: conversationId,
+      role: 'user',
+      content,
+      created_at: new Date().toISOString(),
+    }
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    const response = await fetch(getStreamUrl(conversationId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify({
+        content,
+        use_rag: pendingConfirmation?.useRag ?? useRag,
+        confirm_tools: confirmTools,
+      }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status}`
+      try {
+        const data = await response.json()
+        if (typeof data?.detail === 'string') message = data.detail
+      } catch {
+        // Keep status message.
+      }
+      throw new Error(message)
+    }
+
+    const streamResult = await parseStream(response, conversationId, userMessage)
+
+    if (streamResult.confirmationRequired) {
+      setPendingConfirmation({
+        conversationId,
+        content,
+        useRag: pendingConfirmation?.useRag ?? useRag,
+        toolName: streamResult.toolName || 'a protected tool',
+        toolCallId: streamResult.toolCallId,
+        tempMessageId: userMessage.id,
+      })
+      return
+    }
+
+    const freshMessages = await getMessages(conversationId)
+    setMessages(freshMessages)
+    setPendingConfirmation(null)
   }
 
   const sendMessage = async () => {
     const content = input.trim()
-    if (!content || loading || !user) return
+    if (!content || loading || !user || pendingConfirmation) return
 
     setError('')
     setLoading(true)
     setInput('')
+    setToolActivity('')
 
     try {
       let conversationId = activeChat
@@ -260,45 +384,7 @@ export default function Chat() {
         setActiveChat(conversation.id)
       }
 
-      const userMessage: Message = {
-        id: -Date.now(),
-        conversation_id: conversationId,
-        role: 'user',
-        content,
-        created_at: new Date().toISOString(),
-      }
-
-      const controller = new AbortController()
-      abortRef.current = controller
-
-      const response = await fetch(getStreamUrl(conversationId), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getAuthToken()}`,
-        },
-        body: JSON.stringify({
-          content,
-          use_rag: useRag,
-          confirm_tools: false,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        let message = `Request failed with status ${response.status}`
-        try {
-          const data = await response.json()
-          if (typeof data?.detail === 'string') message = data.detail
-        } catch {
-          // Keep status message.
-        }
-        throw new Error(message)
-      }
-
-      await parseStream(response, conversationId, userMessage)
-      const freshMessages = await getMessages(conversationId)
-      setMessages(freshMessages)
+      await streamConversation(conversationId, content, false)
     } catch (sendError) {
       if (sendError instanceof DOMException && sendError.name === 'AbortError') {
         setError('Generation stopped')
@@ -308,7 +394,48 @@ export default function Chat() {
       }
     } finally {
       abortRef.current = null
+      setToolActivity('')
       setLoading(false)
+    }
+  }
+
+  const confirmPendingTool = async () => {
+    if (!pendingConfirmation || loading) return
+
+    const confirmation = pendingConfirmation
+    setError('')
+    setLoading(true)
+    setPendingConfirmation(null)
+    setToolActivity(`Using ${confirmation.toolName}…`)
+    setMessages((current) => current.filter((message) => message.id !== confirmation.tempMessageId))
+
+    try {
+      await streamConversation(confirmation.conversationId, confirmation.content, true)
+    } catch (confirmError) {
+      console.error(confirmError)
+      setError(confirmError instanceof Error ? confirmError.message : 'Tool confirmation failed')
+      setPendingConfirmation(confirmation)
+    } finally {
+      abortRef.current = null
+      setToolActivity('')
+      setLoading(false)
+    }
+  }
+
+  const cancelPendingTool = async () => {
+    if (!pendingConfirmation || loading) return
+
+    const confirmation = pendingConfirmation
+    setPendingConfirmation(null)
+    setToolActivity('')
+    setMessages((current) => current.filter((message) => message.id !== confirmation.tempMessageId))
+    setError('Tool execution cancelled.')
+
+    try {
+      const freshMessages = await getMessages(confirmation.conversationId)
+      setMessages(freshMessages)
+    } catch (loadError) {
+      console.error(loadError)
     }
   }
 
@@ -403,7 +530,7 @@ export default function Chat() {
           )}
         </div>
 
-        <button onClick={createNewChat} disabled={loading} style={styles.newChatButton}>
+        <button onClick={createNewChat} disabled={loading || Boolean(pendingConfirmation)} style={styles.newChatButton}>
           + New conversation
         </button>
 
@@ -416,6 +543,7 @@ export default function Chat() {
                 ...styles.chatItem,
                 ...(chat.id === activeChat ? styles.chatItemActive : {}),
               }}
+              disabled={loading || Boolean(pendingConfirmation)}
             >
               {chat.title}
             </button>
@@ -438,7 +566,12 @@ export default function Chat() {
           </button>
           <div style={styles.headerTitle}>{chats.find((chat) => chat.id === activeChat)?.title || 'New conversation'}</div>
           <label style={styles.ragToggle}>
-            <input type="checkbox" checked={useRag} onChange={(event) => setUseRag(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={useRag}
+              onChange={(event) => setUseRag(event.target.checked)}
+              disabled={Boolean(pendingConfirmation)}
+            />
             RAG
           </label>
         </header>
@@ -472,7 +605,26 @@ export default function Chat() {
             </article>
           ))}
 
-          {loading && <div style={styles.typing}>VeloraAi is thinking…</div>}
+          {toolActivity && <div style={styles.typing}>{toolActivity}</div>}
+
+          {pendingConfirmation && (
+            <div style={styles.confirmationCard}>
+              <div style={styles.confirmationTitle}>VeloraAi needs your approval</div>
+              <div style={styles.confirmationMeta}>
+                The tool <strong>{pendingConfirmation.toolName}</strong> requested permission to run for this message.
+              </div>
+              <div style={styles.confirmationActions}>
+                <button onClick={() => void cancelPendingTool()} disabled={loading} style={styles.cancelButton}>
+                  Cancel
+                </button>
+                <button onClick={() => void confirmPendingTool()} disabled={loading} style={styles.confirmButton}>
+                  Confirm
+                </button>
+              </div>
+            </div>
+          )}
+
+          {loading && !toolActivity && !pendingConfirmation && <div style={styles.typing}>VeloraAi is thinking…</div>}
           {error && <div style={styles.error}>{error}</div>}
           <div ref={chatEndRef} />
         </div>
@@ -488,16 +640,16 @@ export default function Chat() {
                   void sendMessage()
                 }
               }}
-              placeholder="Message VeloraAi…"
+              placeholder={pendingConfirmation ? 'Approve the requested tool above…' : 'Message VeloraAi…'}
               style={styles.composerInput}
-              disabled={loading}
+              disabled={loading || Boolean(pendingConfirmation)}
             />
             {loading ? (
               <button onClick={stopGeneration} style={styles.stopButton}>
                 Stop
               </button>
             ) : (
-              <button onClick={() => void sendMessage()} style={styles.sendButton} disabled={!input.trim()}>
+              <button onClick={() => void sendMessage()} style={styles.sendButton} disabled={!input.trim() || Boolean(pendingConfirmation)}>
                 Send
               </button>
             )}
@@ -654,6 +806,47 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#8d8d8d',
     fontSize: 13,
     marginBottom: 12,
+  },
+  confirmationCard: {
+    maxWidth: 620,
+    margin: '8px auto 18px',
+    border: '1px solid #5a4724',
+    background: '#17130b',
+    borderRadius: 14,
+    padding: 16,
+  },
+  confirmationTitle: {
+    fontSize: 14,
+    fontWeight: 800,
+    marginBottom: 8,
+  },
+  confirmationMeta: {
+    color: '#c9c1b1',
+    fontSize: 13,
+    lineHeight: 1.5,
+  },
+  confirmationActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 14,
+  },
+  confirmButton: {
+    border: 0,
+    background: '#d97706',
+    color: '#111',
+    borderRadius: 10,
+    padding: '9px 14px',
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
+  cancelButton: {
+    border: '1px solid #3a3a3a',
+    background: '#1a1a1a',
+    color: '#fff',
+    borderRadius: 10,
+    padding: '9px 14px',
+    cursor: 'pointer',
   },
   composerWrap: {
     position: 'fixed',
