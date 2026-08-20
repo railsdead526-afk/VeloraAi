@@ -59,8 +59,8 @@ class Settings:
             raise RuntimeError("AI_TIMEOUT_SECONDS must be greater than zero")
         if self.ai_max_retries < 0 or self.ai_max_retries > 5:
             raise RuntimeError("AI_MAX_RETRIES must be between 0 and 5")
-        if self.embedding_dimensions < 1:
-            raise RuntimeError("EMBEDDING_DIMENSIONS must be greater than zero")
+        if self.embedding_dimensions != 1536:
+            raise RuntimeError("EMBEDDING_DIMENSIONS must remain 1536 until the database vector schema is migrated")
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
         if self.payment_timeout_seconds <= 0:
@@ -89,6 +89,8 @@ class Settings:
                 raise RuntimeError("RATE_LIMIT_STORAGE_URI must use shared storage in production")
             if not self.cors_origins:
                 raise RuntimeError("CORS_ORIGINS must be configured in production")
+            if "*" in self.cors_origins:
+                raise RuntimeError("CORS_ORIGINS must not use * when credentials are enabled")
             if not self.midtrans_server_key or not self.midtrans_client_key:
                 raise RuntimeError("Midtrans credentials must be configured in production")
             if self.pro_price_idr <= 0 or self.max_price_idr <= 0:

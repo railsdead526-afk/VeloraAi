@@ -1,23 +1,34 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import limiter
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
 from app.services.document_ingestion import DocumentExtractionError, extract_text
 from app.services.embedding_usage_service import embedding_usage_summary
 from app.services.rag_jobs import process_document_index
-from app.services.rag_service import DuplicateDocumentError, RAGError, create_pending_document, delete_document, reindex_document, retrieve_chunks
+from app.services.rag_service import (
+    DocumentIndexInProgressError,
+    DuplicateDocumentError,
+    RAGError,
+    create_pending_document,
+    delete_document,
+    reindex_document,
+    retrieve_chunks,
+)
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_chat)
 def create_document(
+    request: Request,
     payload: DocumentCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -41,7 +52,9 @@ def create_document(
 
 
 @router.post("/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_chat)
 def upload_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -99,6 +112,8 @@ def reindex_one_document(
         document = reindex_document(db, user_id=current_user.id, document_id=document_id)
         background_tasks.add_task(process_document_index, document.id)
         return document
+    except DocumentIndexInProgressError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RAGError as exc:
         status_code = status.HTTP_404_NOT_FOUND if str(exc) == "Document not found" else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
@@ -114,7 +129,8 @@ def delete_one_document(document_id: int, db: Session = Depends(get_db), current
 
 
 @router.post("/search", response_model=list[DocumentSearchResult])
-def search_documents(payload: DocumentSearchRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+@limiter.limit(settings.rate_limit_chat)
+def search_documents(request: Request, payload: DocumentSearchRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     try:
         results = retrieve_chunks(db, user_id=current_user.id, query=payload.query, limit=payload.limit)
     except RAGError as exc:

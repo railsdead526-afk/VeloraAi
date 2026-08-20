@@ -111,5 +111,7 @@ def test_sync_user_role_downgrades_after_subscription_cancellation(db):
     db.commit()
 
     sync_user_role(db, user_id=user.id)
+    assert user.role == "free"
+    db.commit()
     db.refresh(user)
     assert user.role == "free"

@@ -11,7 +11,7 @@ from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models.billing import Payment
 from app.schemas.payment import PaymentCreateRequest, PaymentCreateResponse
-from app.services.billing_service import apply_payment_notification, create_payment_intent
+from app.services.billing_service import apply_payment_notification, create_payment_intent, sync_user_role
 from app.services.midtrans_service import MidtransError, MidtransService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -165,5 +165,6 @@ def refund_payment(
         payment.status = "refunded"
         if payment.subscription is not None:
             payment.subscription.status = "canceled"
+        sync_user_role(db, user_id=payment.user_id)
     db.commit()
     return {"status": payment.refund_status, "payment_id": payment.id, "refund_amount": refund_amount}
