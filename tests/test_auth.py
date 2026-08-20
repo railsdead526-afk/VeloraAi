@@ -47,6 +47,37 @@ def test_login_wrong_password_is_rejected():
     assert response.status_code == 401
 
 
+def test_inactive_user_cannot_login_or_use_existing_token():
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "inactive@example.com", "password": "12345678"},
+    )
+    active_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "inactive@example.com", "password": "12345678"},
+    )
+    assert active_login.status_code == 200
+    token = active_login.json()["access_token"]
+
+    db = TestingSessionLocal()
+    try:
+        from app.crud.user import get_user_by_email
+        user = get_user_by_email(db, "inactive@example.com")
+        user.is_active = False
+        db.commit()
+    finally:
+        db.close()
+
+    assert client.post(
+        "/api/v1/auth/login",
+        json={"email": "inactive@example.com", "password": "12345678"},
+    ).status_code == 401
+    assert client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    ).status_code == 401
+
+
 def test_auth_me():
     client.post(
         "/api/v1/auth/register",
