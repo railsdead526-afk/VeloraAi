@@ -3,7 +3,6 @@ import json
 import pytest
 
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
-from app.services.tool_confirmation import create_confirmation_token
 from app.tools.base import ToolDefinition
 from app.tools.registry import ToolRegistry
 
@@ -216,14 +215,15 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             "function": {"name": "dangerous_write", "arguments": '{"value":"approved"}'},
         }]}}]
     }
+    first_round = [_sse(tool_request), "data: [DONE]"]
     final_round = [
         _sse({"choices": [{"delta": {"content": "Done."}}]}),
         _sse({"usage": {"prompt_tokens": 8, "completion_tokens": 2}}),
         "data: [DONE]",
     ]
-    first_client = _FakeClient([[ _sse(tool_request), "data: [DONE]" ]])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: first_client)
 
+    first_client = _FakeClient([first_round])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: first_client)
     events = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -237,8 +237,8 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     ]
     token = next(event.confirmation_token for event in events if event.type == "tool_confirmation_required")
 
-    second_client = _FakeClient([final_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: second_client)
+    resumed_client = _FakeClient([first_round, final_round])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: resumed_client)
     resumed = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -255,7 +255,7 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     assert executed == [{"value": "approved"}]
     assert resumed[-1].type == "done"
 
-    mismatched_client = _FakeClient([[ _sse(tool_request), "data: [DONE]" ]])
+    mismatched_client = _FakeClient([first_round])
     monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: mismatched_client)
     mismatched = [
         event
