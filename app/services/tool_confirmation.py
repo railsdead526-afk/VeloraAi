@@ -6,9 +6,14 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import delete, update
+
 from app.core.config import settings
+from app.core.database import SessionLocal
+from app.models.tool_confirmation import ToolConfirmation
 
 CONFIRMATION_TTL_SECONDS = 300
 
@@ -34,9 +39,7 @@ def _decode(token: str) -> dict[str, Any] | None:
         if not hmac.compare_digest(expected, supplied):
             return None
         payload = json.loads(base64.urlsafe_b64decode(body + "===").decode("utf-8"))
-        if not isinstance(payload, dict):
-            return None
-        return payload
+        return payload if isinstance(payload, dict) else None
     except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError, binascii.Error):
         return None
 
@@ -46,6 +49,10 @@ def argument_fingerprint(arguments: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def create_confirmation_token(
     *,
     user_id: int,
@@ -53,14 +60,32 @@ def create_confirmation_token(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> str:
+    expires_at = int(time.time()) + CONFIRMATION_TTL_SECONDS
     payload = {
         "sub": user_id,
         "conversation_id": conversation_id,
         "tool": tool_name,
         "args": argument_fingerprint(arguments),
-        "exp": int(time.time()) + CONFIRMATION_TTL_SECONDS,
+        "exp": expires_at,
     }
-    return _encode(payload)
+    token = _encode(payload)
+
+    with SessionLocal() as db:
+        now = datetime.now(UTC)
+        db.execute(delete(ToolConfirmation).where(ToolConfirmation.expires_at < now))
+        db.add(
+            ToolConfirmation(
+                token_hash=_token_hash(token),
+                user_id=user_id,
+                conversation_id=conversation_id,
+                tool_name=tool_name,
+                arguments_hash=payload["args"],
+                expires_at=datetime.fromtimestamp(expires_at, tz=UTC),
+            )
+        )
+        db.commit()
+
+    return token
 
 
 def verify_confirmation_token(
@@ -82,9 +107,32 @@ def verify_confirmation_token(
         return False
     if expires_at < int(time.time()):
         return False
-    return (
-        payload.get("sub") == user_id
-        and payload.get("conversation_id") == conversation_id
-        and payload.get("tool") == tool_name
-        and payload.get("args") == argument_fingerprint(arguments)
-    )
+
+    arguments_hash = argument_fingerprint(arguments)
+    if (
+        payload.get("sub") != user_id
+        or payload.get("conversation_id") != conversation_id
+        or payload.get("tool") != tool_name
+        or payload.get("args") != arguments_hash
+    ):
+        return False
+
+    now = datetime.now(UTC)
+    result = None
+    with SessionLocal() as db:
+        result = db.execute(
+            update(ToolConfirmation)
+            .where(
+                ToolConfirmation.token_hash == _token_hash(token),
+                ToolConfirmation.user_id == user_id,
+                ToolConfirmation.conversation_id == conversation_id,
+                ToolConfirmation.tool_name == tool_name,
+                ToolConfirmation.arguments_hash == arguments_hash,
+                ToolConfirmation.used_at.is_(None),
+                ToolConfirmation.expires_at >= now,
+            )
+            .values(used_at=now)
+        )
+        db.commit()
+
+    return result.rowcount == 1
