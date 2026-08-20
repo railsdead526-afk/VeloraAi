@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.main import app
+from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter
 from app.models.user import User
@@ -35,6 +36,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 def reset_test_state():
     """Keep API tests isolated from database and rate-limit state."""
     limiter.reset()
+    settings.midtrans_server_key = "ci-test-midtrans-server-key"
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
