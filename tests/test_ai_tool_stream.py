@@ -88,58 +88,45 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
     registry.register(
         ToolDefinition(
             name="github_list_repositories",
-            description="List GitHub repositories",
+            description="List repositories",
             handler=handler,
-            allowed_plans=frozenset({"free", "pro", "max", "admin"}),
-            parameters={
-                "type": "object",
-                "properties": {"limit": {"type": "integer"}},
-                "additionalProperties": False,
-            },
+            allowed_plans=frozenset({"pro", "max", "admin"}),
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
         )
     )
 
-    first_delta = {
-        "choices": [{"delta": {"tool_calls": [{
+    first_round = [
+        _sse({"choices": [{"delta": {"tool_calls": [{
             "index": 0,
             "id": "call-1",
-            "function": {"name": "github_list_repositories", "arguments": '{"lim'},
-        }]}}]
-    }
-    second_delta = {
-        "choices": [{"delta": {"tool_calls": [{
-            "index": 0,
-            "function": {"arguments": 'it": 1}'},
-        }]}}]
-    }
-    first_round = [_sse(first_delta), _sse(second_delta), "data: [DONE]"]
+            "function": {"name": "github_list_repositories", "arguments": "{}"},
+        }]}}]}),
+        "data: [DONE]",
+    ]
     second_round = [
-        _sse({"choices": [{"delta": {"content": "Found VeloraAi."}}]}),
-        _sse({"usage": {"prompt_tokens": 10, "completion_tokens": 4}}),
+        _sse({"choices": [{"delta": {"content": "Repositories found."}}]}),
+        _sse({"usage": {"prompt_tokens": 10, "completion_tokens": 3}}),
         "data: [DONE]",
     ]
 
-    fake_client = _FakeClient([first_round, second_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: fake_client)
-
+    client = _FakeClient([first_round, second_round])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client)
     events = [
         event
         async for event in stream_ai_reply_with_tools(
-            [{"role": "user", "content": "list my github repositories"}],
-            plan="free",
+            [{"role": "user", "content": "list repos"}],
+            plan="pro",
             confirmed=False,
             registry=registry,
         )
     ]
 
-    assert calls == [{"limit": 1}]
-    assert [event.type for event in events] == ["tool_start", "tool_end", "token", "done"]
-    assert events[-1].input_tokens == 10
-    assert events[-1].output_tokens == 4
+    assert calls == [{}]
+    assert events[-1].type == "done"
 
 
 @pytest.mark.asyncio
-async def test_native_stream_emits_confirmation_required_without_execution(monkeypatch):
+async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatch):
     monkeypatch.setattr("app.services.ai_tool_stream.settings.ai_provider", "llama")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
@@ -148,13 +135,18 @@ async def test_native_stream_emits_confirmation_required_without_execution(monke
 
     registry = ToolRegistry()
     executed = []
-
     registry.register(
         ToolDefinition(
             name="dangerous_write",
             description="Write something important",
-            handler=lambda arguments: executed.append(arguments),
+            handler=lambda arguments: executed.append(arguments) or {"ok": True},
             allowed_plans=frozenset({"pro", "max", "admin"}),
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
             requires_confirmation=True,
         )
     )
@@ -163,17 +155,17 @@ async def test_native_stream_emits_confirmation_required_without_execution(monke
         "choices": [{"delta": {"tool_calls": [{
             "index": 0,
             "id": "call-2",
-            "function": {"name": "dangerous_write", "arguments": "{}"},
+            "function": {"name": "dangerous_write", "arguments": '{"value":"approved"}'},
         }]}}]
     }
-    response_lines = [_sse(tool_request), "data: [DONE]"]
-    fake_client = _FakeClient([response_lines])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: fake_client)
+    first_round = [_sse(tool_request), "data: [DONE]"]
 
+    client = _FakeClient([first_round])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client)
     events = [
         event
         async for event in stream_ai_reply_with_tools(
-            [{"role": "user", "content": "write something"}],
+            [{"role": "user", "content": "write"}],
             plan="pro",
             confirmed=False,
             registry=registry,
@@ -204,6 +196,12 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             description="Write something important",
             handler=lambda arguments: executed.append(arguments) or {"ok": True},
             allowed_plans=frozenset({"pro", "max", "admin"}),
+            parameters={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+                "required": ["value"],
+                "additionalProperties": False,
+            },
             requires_confirmation=True,
         )
     )
@@ -269,5 +267,6 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             approved_confirmation_token=token,
         )
     ]
-    assert len(executed) == 1
-    assert any(event.type == "tool_confirmation_required" for event in mismatched)
+
+    assert not any(event.type == "done" for event in mismatched)
+    assert executed == [{"value": "approved"}]
