@@ -11,7 +11,15 @@ from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearc
 from app.services.document_ingestion import DocumentExtractionError, extract_text
 from app.services.embedding_usage_service import embedding_usage_summary
 from app.services.rag_jobs import process_document_index
-from app.services.rag_service import DuplicateDocumentError, RAGError, create_pending_document, delete_document, reindex_document, retrieve_chunks
+from app.services.rag_service import (
+    DocumentIndexInProgressError,
+    DuplicateDocumentError,
+    RAGError,
+    create_pending_document,
+    delete_document,
+    reindex_document,
+    retrieve_chunks,
+)
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -99,6 +107,8 @@ def reindex_one_document(
         document = reindex_document(db, user_id=current_user.id, document_id=document_id)
         background_tasks.add_task(process_document_index, document.id)
         return document
+    except DocumentIndexInProgressError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RAGError as exc:
         status_code = status.HTTP_404_NOT_FOUND if str(exc) == "Document not found" else status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
