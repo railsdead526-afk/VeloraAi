@@ -5,6 +5,9 @@ export interface User {
   email: string
   is_active: boolean
   role: 'free' | 'pro' | 'max' | 'admin'
+  daily_requests_used: number
+  daily_request_limit: number | null
+  daily_reset_at: string | null
 }
 
 export interface TokenResponse {
