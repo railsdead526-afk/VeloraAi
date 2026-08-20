@@ -12,6 +12,7 @@ import {
   login,
   register,
   setAuthToken,
+  subscribeAuthExpired,
   type Conversation,
   type Message,
   type User,
@@ -45,6 +46,23 @@ export default function Chat() {
     checkMobile()
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuthExpired(() => {
+      abortRef.current?.abort()
+      abortRef.current = null
+      setUser(null)
+      setChats([])
+      setMessages([])
+      setActiveChat(null)
+      setInput('')
+      setError('Your session has expired. Please sign in again.')
+      setLoading(false)
+      setAuthLoading(false)
+    })
+
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -86,16 +104,28 @@ export default function Chat() {
     }
 
     void loadMessages()
-
   }, [activeChat])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const logout = () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    clearAuthToken()
+    setUser(null)
+    setChats([])
+    setMessages([])
+    setActiveChat(null)
+    setInput('')
+    setLoading(false)
+  }
+
   const handleAuth = async (event: FormEvent) => {
     event.preventDefault()
     setAuthError('')
+    setError('')
     setAuthLoading(true)
 
     try {
@@ -119,17 +149,6 @@ export default function Chat() {
     } finally {
       setAuthLoading(false)
     }
-  }
-
-  const logout = () => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    clearAuthToken()
-    setUser(null)
-    setChats([])
-    setMessages([])
-    setActiveChat(null)
-    setLoading(false)
   }
 
   const createNewChat = async () => {
@@ -156,15 +175,16 @@ export default function Chat() {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    const assistantPlaceholderId = -(Date.now() + 1)
     let buffer = ''
-    let assistantId = -Date.now()
+    let assistantId = assistantPlaceholderId
     let assistantContent = ''
 
     setMessages((current) => [
       ...current.filter((message) => message.id !== userMessage.id),
       userMessage,
       {
-        id: assistantId,
+        id: assistantPlaceholderId,
         conversation_id: conversationId,
         role: 'assistant',
         content: '',
@@ -195,7 +215,7 @@ export default function Chat() {
         assistantId = payload.message_id
         setMessages((current) =>
           current.map((message) =>
-            message.id === -Date.now() ? { ...message, id: assistantId } : message,
+            message.id === assistantPlaceholderId ? { ...message, id: assistantId } : message,
           ),
         )
       }
@@ -338,6 +358,7 @@ export default function Chat() {
           />
 
           {authError && <div style={styles.error}>{authError}</div>}
+          {error && <div style={styles.error}>{error}</div>}
 
           <button type="submit" disabled={authLoading} style={styles.primaryButton}>
             {authMode === 'login' ? 'Sign in' : 'Create account'}
@@ -348,6 +369,7 @@ export default function Chat() {
             onClick={() => {
               setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))
               setAuthError('')
+              setError('')
             }}
             style={styles.linkButton}
           >
