@@ -120,6 +120,18 @@ def _get_document(db: Session, *, user_id: int, document_id: int) -> Document:
     return document
 
 
+def _validate_document_payload(*, name: str, normalized_text: str) -> str:
+    clean_name = name.strip()
+    if not clean_name:
+        raise RAGError("Document name is empty")
+    if len(clean_name) > 255:
+        clean_name = clean_name[:255]
+    text_size = len(normalized_text.encode("utf-8"))
+    if text_size > settings.document_max_upload_bytes:
+        raise RAGError("Document exceeds the upload size limit")
+    return clean_name
+
+
 def create_pending_document(
     db: Session,
     *,
@@ -132,6 +144,7 @@ def create_pending_document(
     normalized = normalize_text(text)
     if not normalized:
         raise RAGError("Document text is empty")
+    clean_name = _validate_document_payload(name=name, normalized_text=normalized)
     digest = content_hash(normalized)
     existing = db.execute(
         select(Document).where(Document.user_id == user_id, Document.content_hash == digest)
@@ -141,7 +154,7 @@ def create_pending_document(
 
     document = Document(
         user_id=user_id,
-        name=name.strip()[:255],
+        name=clean_name,
         source=source,
         mime_type=mime_type,
         status="queued",
