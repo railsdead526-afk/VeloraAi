@@ -232,6 +232,7 @@ async def stream_ai_reply_with_tools(
                 )
             api_messages.append(assistant_message)
 
+            confirmation_required = False
             for call in assistant_message["tool_calls"]:
                 name = call["function"]["name"]
                 tool_call_id = call["id"]
@@ -242,6 +243,7 @@ async def stream_ai_reply_with_tools(
                 else:
                     tool = registry.get(name)
                     if tool.requires_confirmation and not confirmed:
+                        confirmation_required = True
                         yield AgentStreamEvent(
                             type="tool_confirmation_required",
                             name=name,
@@ -266,6 +268,9 @@ async def stream_ai_reply_with_tools(
 
                 api_messages.append(_tool_message(tool_call_id, result))
                 yield AgentStreamEvent(type="tool_end", name=name, tool_call_id=tool_call_id)
+
+            if confirmation_required:
+                return
 
             if round_index == MAX_TOOL_ROUNDS - 1:
                 raise RuntimeError("AI tool execution exceeded the maximum number of rounds")
