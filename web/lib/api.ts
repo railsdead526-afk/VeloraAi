@@ -56,7 +56,9 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
   if (response.status === 401) {
     clearAuthToken()
-    window.dispatchEvent(new Event('velora-auth-expired'))
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('velora-auth-expired'))
+    }
     throw new Error('Your session has expired. Please sign in again.')
   }
 
@@ -133,4 +135,11 @@ export function setAuthToken(token: string): void {
 
 export function clearAuthToken(): void {
   localStorage.removeItem('velora_access_token')
+}
+
+export function subscribeAuthExpired(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined
+  const handler = () => listener()
+  window.addEventListener('velora-auth-expired', handler)
+  return () => window.removeEventListener('velora-auth-expired', handler)
 }
