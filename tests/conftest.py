@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.main import app
 from app.core.database import Base, get_db
+from app.core.rate_limit import limiter
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
 
@@ -29,10 +30,18 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-@pytest.fixture
-def db():
+@pytest.fixture(autouse=True)
+def reset_test_state():
+    """Keep API tests isolated from database and rate-limit state."""
+    limiter.reset()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    yield
+    limiter.reset()
+
+
+@pytest.fixture
+def db():
     session = TestingSessionLocal()
     try:
         yield session
