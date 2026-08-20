@@ -10,8 +10,11 @@ from app.services.embedding_usage_service import record_embedding_usage
 from app.services.rag_service import RAGError, embed_texts, chunk_text, normalize_text, content_hash
 
 
-def process_document_index(document_id: int) -> None:
-    db: Session = SessionLocal()
+def process_document_index(document_id: int, db: Session | None = None) -> None:
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
+
     document = None
     started = time.perf_counter()
     try:
@@ -83,4 +86,5 @@ def process_document_index(document_id: int) -> None:
             except Exception:
                 db.rollback()
     finally:
-        db.close()
+        if owns_session:
+            db.close()
