@@ -55,7 +55,11 @@ def enforce_monthly_token_quota(
         raise ValueError("additional_tokens must be non-negative")
 
     used = tokens_used_since(db, user_id, _month_start())
-    if used + additional_tokens > monthly_limit:
+    if additional_tokens == 0:
+        exceeded = used >= monthly_limit
+    else:
+        exceeded = used + additional_tokens > monthly_limit
+    if exceeded:
         raise QuotaExceededError("Monthly AI token quota exceeded")
 
 
