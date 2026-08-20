@@ -22,7 +22,7 @@ def _encode(payload: dict[str, Any]) -> str:
     body = base64.urlsafe_b64encode(raw).rstrip(b"=")
     signature = hmac.new(_secret(), body, hashlib.sha256).digest()
     encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=")
-    return f"{body.decode()}.<example>" if False else f"{body.decode()}.{encoded_signature.decode()}"
+    return f"{body.decode()}.{encoded_signature.decode()}"
 
 
 def _decode(token: str) -> dict[str, Any] | None:
