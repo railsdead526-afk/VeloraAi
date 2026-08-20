@@ -44,6 +44,42 @@ def test_quota_blocks_when_limit_reached(db):
         enforce_monthly_token_quota(db, user_id=user.id, monthly_limit=100)
 
 
+def test_quota_allows_request_that_exactly_reaches_limit(db):
+    user, conversation = _seed_user_and_conversation(db)
+    db.add(AIUsage(user_id=user.id, conversation_id=conversation.id, provider="mock", model="mock", input_tokens=60, output_tokens=30, total_tokens=90, created_at=datetime.now(timezone.utc)))
+    db.commit()
+    enforce_monthly_token_quota(
+        db,
+        user_id=user.id,
+        monthly_limit=100,
+        additional_tokens=10,
+    )
+
+
+def test_quota_blocks_request_that_would_exceed_limit(db):
+    user, conversation = _seed_user_and_conversation(db)
+    db.add(AIUsage(user_id=user.id, conversation_id=conversation.id, provider="mock", model="mock", input_tokens=60, output_tokens=30, total_tokens=90, created_at=datetime.now(timezone.utc)))
+    db.commit()
+    with pytest.raises(QuotaExceededError):
+        enforce_monthly_token_quota(
+            db,
+            user_id=user.id,
+            monthly_limit=100,
+            additional_tokens=11,
+        )
+
+
 def test_quota_rejects_negative_limit(db):
     with pytest.raises(ValueError):
         enforce_monthly_token_quota(db, user_id=1, monthly_limit=-1)
+
+
+def test_quota_rejects_negative_additional_tokens(db):
+    user, _ = _seed_user_and_conversation(db)
+    with pytest.raises(ValueError):
+        enforce_monthly_token_quota(
+            db,
+            user_id=user.id,
+            monthly_limit=100,
+            additional_tokens=-1,
+        )
