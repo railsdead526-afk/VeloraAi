@@ -118,7 +118,6 @@ def verify_confirmation_token(
         return False
 
     now = datetime.now(UTC)
-    result = None
     with SessionLocal() as db:
         result = db.execute(
             update(ToolConfirmation)
