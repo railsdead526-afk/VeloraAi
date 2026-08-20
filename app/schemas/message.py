@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, validator
 class MessageCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=12000)
     confirm_tools: bool = False
+    tool_confirmation_token: str | None = None
     use_rag: bool = True
 
     @validator("content")
