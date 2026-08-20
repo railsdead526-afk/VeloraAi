@@ -7,24 +7,38 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.document import Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
-from app.services.rag_service import RAGError, embed_texts, chunk_text, normalize_text, content_hash
+from app.services.rag_service import RAGError, chunk_text, content_hash, embed_texts, normalize_text
 
 
-def process_document_index(document_id: int) -> None:
-    db: Session = SessionLocal()
+def process_document_index(document_id: int, db: Session | None = None) -> None:
+    owns_session = db is None
+    if db is None:
+        db = SessionLocal()
+
     document = None
     started = time.perf_counter()
     try:
         document = db.query(Document).filter(Document.id == document_id).first()
-        if document is None:
-            return
-        if document.status not in {"queued", "processing"}:
+        if document is None or document.status != "queued":
             return
 
-        document.status = "processing"
-        document.indexing_attempts = int(document.indexing_attempts or 0) + 1
-        document.last_index_error = None
+        claimed = (
+            db.query(Document)
+            .filter(Document.id == document_id, Document.status == "queued")
+            .update(
+                {
+                    "status": "processing",
+                    "indexing_attempts": Document.indexing_attempts + 1,
+                    "last_index_error": None,
+                },
+                synchronize_session=False,
+            )
+        )
+        if claimed != 1:
+            db.rollback()
+            return
         db.commit()
+        db.refresh(document)
 
         normalized = normalize_text(document.raw_text)
         chunks = chunk_text(normalized)
@@ -83,4 +97,5 @@ def process_document_index(document_id: int) -> None:
             except Exception:
                 db.rollback()
     finally:
-        db.close()
+        if owns_session:
+            db.close()

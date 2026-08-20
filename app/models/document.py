@@ -1,12 +1,41 @@
+import json
+
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 from pgvector.sqlalchemy import Vector
 
 from app.core.database import Base
 
 
 EMBEDDING_DIMENSIONS = 1536
-EMBEDDING_TYPE = Vector(EMBEDDING_DIMENSIONS).with_variant(Text(), "sqlite")
+
+
+class EmbeddingType(TypeDecorator):
+    impl = Vector(EMBEDDING_DIMENSIONS)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "sqlite":
+            return dialect.type_descriptor(Text())
+        return dialect.type_descriptor(Vector(EMBEDDING_DIMENSIONS))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            return json.dumps(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            return json.loads(value) if isinstance(value, str) else value
+        return value
+
+
+EMBEDDING_TYPE = EmbeddingType()
 
 
 class Document(Base):

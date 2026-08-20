@@ -31,12 +31,13 @@ from app.tools.bootstrap import get_registry
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-def enforce_user_plan_quota(db: Session, user) -> None:
+def enforce_user_plan_quota(db: Session, user, *, additional_tokens: int = 0) -> None:
     try:
         enforce_plan_quota(
             db,
             user_id=user.id,
             policy=get_plan_policy(getattr(user, "role", None)),
+            additional_tokens=additional_tokens,
         )
     except QuotaExceededError as exc:
         raise HTTPException(
@@ -159,11 +160,18 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
         else:
             ai_result = generate_ai_reply_from_history(history_payload)
 
-        assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=ai_result.content, commit=False)
         input_tokens = ai_result.input_tokens
         output_tokens = ai_result.output_tokens
         if input_tokens is None or output_tokens is None:
             raise RuntimeError("AI provider did not return token usage")
+
+        enforce_user_plan_quota(
+            db,
+            current_user,
+            additional_tokens=int(input_tokens) + int(output_tokens),
+        )
+
+        assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=ai_result.content, commit=False)
         record_ai_usage(
             db,
             user_id=current_user.id,
@@ -180,6 +188,9 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
     except RuntimeError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to complete the request") from exc
@@ -251,6 +262,11 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
                 output_tokens=output_tokens,
                 commit=False,
             )
+            enforce_user_plan_quota(
+                db,
+                current_user,
+                additional_tokens=int(input_tokens) + int(output_tokens),
+            )
             db.commit()
             db.refresh(user_message)
             db.refresh(assistant_message)
@@ -261,6 +277,9 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
         except RuntimeError as exc:
             db.rollback()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
+        except HTTPException as exc:
+            db.rollback()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)}, ensure_ascii=False)}\n\n"
         except Exception:
             db.rollback()
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
