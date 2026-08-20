@@ -19,7 +19,7 @@ def test_selector_filters_by_plan_and_context():
     tools = [
         _tool("github_read_file", frozenset({"pro", "max", "admin"})),
         _tool("calculator", frozenset({"free", "pro", "max", "admin"})),
-        _tool("terminal", frozenset({"pro", "max", "admin"})),
+        _tool("terminal_read_file", frozenset({"pro", "max", "admin"})),
     ]
 
     selected = select_tools(tools, "read my github repository file", plan="pro", max_tools=2)
@@ -31,9 +31,18 @@ def test_selector_filters_by_plan_and_context():
 
 def test_selector_never_exposes_paid_tools_to_free():
     tools = [
-        _tool("github", frozenset({"pro", "max", "admin"})),
+        _tool("github_read_file", frozenset({"pro", "max", "admin"})),
         _tool("calculator", frozenset({"free", "pro", "max", "admin"})),
     ]
 
     selected = select_tools(tools, "use github to inspect my repo", plan="free")
-    assert [tool.name for tool in selected] == ["calculator"]
+    assert [tool.name for tool in selected] == []
+
+
+def test_selector_returns_no_tools_for_unrelated_request():
+    tools = [
+        _tool("github_read_file", frozenset({"pro", "max", "admin"})),
+        _tool("terminal_read_file", frozenset({"pro", "max", "admin"})),
+    ]
+
+    assert select_tools(tools, "jelaskan konsep recursion", plan="pro") == []

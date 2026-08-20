@@ -12,8 +12,10 @@ def test_platform_tools_are_registered():
         "railway_list_projects",
         "cloudflare_list_zones",
         "supabase_list_projects",
-        "terminal_exec",
+        "terminal_read_file",
+        "terminal_run_tests",
     } <= names
+    assert "terminal_exec" not in names
 
 
 def test_tool_schemas_are_function_calling_compatible():

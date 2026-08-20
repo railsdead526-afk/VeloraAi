@@ -1,24 +1,22 @@
-import time
 import logging
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.api.v1 import auth, system, conversations, rag, payments
 from app.core.config import settings
 from app.core.observability import log_request, set_request_id
 from app.core.rate_limit import limiter
-from app.tools.catalog import register_builtin_tools
 
 logger = logging.getLogger("veloraai")
 
 app = FastAPI(title=settings.app_name)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-register_builtin_tools()
 
 if settings.cors_origins:
     app.add_middleware(
