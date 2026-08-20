@@ -7,16 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.rate_limit import limiter
 from app.crud.ai_usage import record_ai_usage
 from app.crud.conversation import get_conversation_by_id
-from app.crud.message import create_message, get_messages_by_conversation
+from app.crud.message import create_message
 from app.schemas.message import MessageCreate
-from app.services.ai_tool_stream import stream_ai_reply_with_tools
+from app.services.agent_context import build_agent_history, enforce_user_plan_quota
 from app.services.ai_service import stream_ai_reply_from_history
-from app.api.v1.conversations import enforce_user_plan_quota, _history_with_rag_context
-from app.core.rate_limit import limiter
+from app.services.ai_tool_stream import stream_ai_reply_with_tools
 from app.tools.bootstrap import get_registry
+from app.core.database import get_db
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -42,12 +42,10 @@ def stream_native_message(
         content=payload.content,
         commit=False,
     )
-    history = get_messages_by_conversation(db, conversation_id)
-    history_payload = [{"role": message.role, "content": message.content} for message in history]
-    history_payload = _history_with_rag_context(
+    history_payload = build_agent_history(
         db,
+        conversation_id=conversation_id,
         user_id=current_user.id,
-        history_payload=history_payload,
         query=payload.content,
         use_rag=payload.use_rag,
     )
@@ -65,19 +63,23 @@ def stream_native_message(
                     confirmed=payload.confirm_tools,
                     registry=get_registry(),
                 ):
-                    if event.type == "token":
+                    event_payload = {"type": event.type}
+                    if event.content:
                         chunks.append(event.content)
-                        yield f"data: {json.dumps({'type': 'token', 'content': event.content}, ensure_ascii=False)}\n\n"
-                    elif event.type == "tool_start":
-                        yield f"data: {json.dumps({'type': 'tool_start', 'name': event.name, 'tool_call_id': event.tool_call_id}, ensure_ascii=False)}\n\n"
-                    elif event.type == "tool_end":
-                        yield f"data: {json.dumps({'type': 'tool_end', 'name': event.name, 'tool_call_id': event.tool_call_id}, ensure_ascii=False)}\n\n"
-                    elif event.type == "done":
-                        usage.update({
-                            "input_tokens": event.input_tokens,
-                            "output_tokens": event.output_tokens,
-                            "model": event.model,
-                        })
+                        event_payload["content"] = event.content
+                    if event.name:
+                        event_payload["name"] = event.name
+                    if event.tool_call_id:
+                        event_payload["tool_call_id"] = event.tool_call_id
+                    if event.type == "done":
+                        usage.update(
+                            {
+                                "input_tokens": event.input_tokens,
+                                "output_tokens": event.output_tokens,
+                                "model": event.model,
+                            }
+                        )
+                    yield f"data: {json.dumps(event_payload, ensure_ascii=False)}\n\n"
             else:
                 async for chunk in stream_ai_reply_from_history(history_payload, usage):
                     chunks.append(chunk)
