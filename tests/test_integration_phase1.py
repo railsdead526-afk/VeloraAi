@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
 from unittest.mock import patch
 
+from app.models.ai_usage import AIUsage
 from app.models.billing import Payment, Subscription
+from app.models.conversation import Conversation
 from app.models.user import User
 from app.services.ai_service import AIResult
 from tests.conftest import TestingSessionLocal, client
@@ -61,6 +64,86 @@ def test_ai_chat_and_streaming_flow():
         assert stream.status_code == 200
         assert "text/event-stream" in stream.headers["content-type"]
         assert '"type": "done"' in stream.text
+
+    db = TestingSessionLocal()
+    try:
+        usage = db.query(AIUsage).filter(AIUsage.user_id == conversation.json()["user_id"]).all()
+        assert len(usage) == 2
+        assert all(item.total_tokens == item.input_tokens + item.output_tokens for item in usage)
+    finally:
+        db.close()
+
+
+def test_chat_failure_is_atomic():
+    _token, headers = _register_and_login("phase1-ai-failure@example.com")
+    conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "Atomic failure"}).json()
+    conversation_id = conversation["id"]
+
+    with patch("app.api.v1.conversations.settings.ai_provider", "openai"), patch(
+        "app.api.v1.conversations.generate_ai_reply_with_tools",
+        side_effect=RuntimeError("provider unavailable"),
+    ):
+        response = client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=headers,
+            json={"content": "This must rollback", "use_rag": False, "confirm_tools": False},
+        )
+
+    assert response.status_code == 503
+
+    db = TestingSessionLocal()
+    try:
+        messages = db.query(__import__("app.models.message", fromlist=["Message"]).Message).filter(
+            __import__("app.models.message", fromlist=["Message"]).Message.conversation_id == conversation_id
+        ).all()
+        assert messages == []
+        assert db.query(AIUsage).filter(AIUsage.conversation_id == conversation_id).count() == 0
+    finally:
+        db.close()
+
+
+def test_chat_quota_rejects_post_generation_overrun():
+    _token, headers = _register_and_login("phase1-ai-quota@example.com")
+    conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "Quota"}).json()
+    conversation_id = conversation["id"]
+
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "phase1-ai-quota@example.com").one()
+        db.add(
+            AIUsage(
+                user_id=user.id,
+                conversation_id=conversation_id,
+                provider="mock",
+                model="mock",
+                input_tokens=99_990,
+                output_tokens=0,
+                total_tokens=99_990,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    result = AIResult(content="too expensive", input_tokens=20, output_tokens=0, model="mock-model")
+    with patch("app.api.v1.conversations.settings.ai_provider", "openai"), patch(
+        "app.api.v1.conversations.generate_ai_reply_with_tools",
+        return_value=result,
+    ):
+        response = client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=headers,
+            json={"content": "over quota", "use_rag": False, "confirm_tools": False},
+        )
+
+    assert response.status_code == 429
+
+    db = TestingSessionLocal()
+    try:
+        assert db.query(AIUsage).filter(AIUsage.conversation_id == conversation_id).count() == 1
+    finally:
+        db.close()
 
 
 def test_tools_registry_integration_contract():
