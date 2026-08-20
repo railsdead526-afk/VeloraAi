@@ -38,13 +38,6 @@ def stream_native_message(
 
     try:
         enforce_user_plan_quota(db, current_user)
-        user_message = create_message(
-            db,
-            conversation_id=conversation_id,
-            role="user",
-            content=payload.content,
-            commit=False,
-        )
         history_payload = build_agent_history(
             db,
             conversation_id=conversation_id,
@@ -120,6 +113,13 @@ def stream_native_message(
             if input_tokens is None or output_tokens is None or not model:
                 raise RuntimeError("AI provider did not return token usage")
 
+            user_message = create_message(
+                db,
+                conversation_id=conversation_id,
+                role="user",
+                content=payload.content,
+                commit=False,
+            )
             assistant_message = create_message(
                 db,
                 conversation_id=conversation_id,
