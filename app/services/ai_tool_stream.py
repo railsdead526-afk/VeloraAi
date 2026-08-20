@@ -240,20 +240,29 @@ async def stream_ai_reply_with_tools(
                 if name not in selected_names:
                     result = {"error": "Tool is not available in the current tool context"}
                 else:
-                    try:
-                        arguments = _parse_tool_arguments(call["function"]["arguments"])
-                        result = await execute_tool(
-                            registry,
+                    tool = registry.get(name)
+                    if tool.requires_confirmation and not confirmed:
+                        yield AgentStreamEvent(
+                            type="tool_confirmation_required",
                             name=name,
-                            arguments=arguments,
-                            plan=plan,
-                            confirmed=confirmed,
-                            call_counts=call_counts,
+                            tool_call_id=tool_call_id,
                         )
-                    except asyncio.CancelledError:
-                        raise
-                    except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
-                        result = {"error": str(exc)}
+                        result = {"error": "Tool execution requires user confirmation"}
+                    else:
+                        try:
+                            arguments = _parse_tool_arguments(call["function"]["arguments"])
+                            result = await execute_tool(
+                                registry,
+                                name=name,
+                                arguments=arguments,
+                                plan=plan,
+                                confirmed=confirmed,
+                                call_counts=call_counts,
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
+                            result = {"error": str(exc)}
 
                 api_messages.append(_tool_message(tool_call_id, result))
                 yield AgentStreamEvent(type="tool_end", name=name, tool_call_id=tool_call_id)
