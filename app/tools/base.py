@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable
 ToolHandler = Callable[[dict[str, Any]], Any | Awaitable[Any]]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ToolDefinition:
     name: str
     description: str
