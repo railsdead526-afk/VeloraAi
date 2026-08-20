@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import limiter
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
 from app.services.document_ingestion import DocumentExtractionError, extract_text
@@ -25,7 +26,9 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 
 
 @router.post("/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_chat)
 def create_document(
+    request: Request,
     payload: DocumentCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -49,7 +52,9 @@ def create_document(
 
 
 @router.post("/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_chat)
 def upload_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -124,7 +129,8 @@ def delete_one_document(document_id: int, db: Session = Depends(get_db), current
 
 
 @router.post("/search", response_model=list[DocumentSearchResult])
-def search_documents(payload: DocumentSearchRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+@limiter.limit(settings.rate_limit_chat)
+def search_documents(request: Request, payload: DocumentSearchRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     try:
         results = retrieve_chunks(db, user_id=current_user.id, query=payload.query, limit=payload.limit)
     except RAGError as exc:
