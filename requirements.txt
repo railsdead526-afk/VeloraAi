@@ -17,3 +17,4 @@ pgvector==0.4.2
 numpy==2.4.6
 python-multipart==0.0.20
 pypdf==5.9.0
+jsonschema==4.25.1
