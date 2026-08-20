@@ -68,6 +68,7 @@ def stream_native_message(
     async def event_stream():
         chunks: list[str] = []
         usage = {"input_tokens": None, "output_tokens": None, "model": None}
+        confirmation_required = False
         try:
             if settings.ai_provider in {"openai", "llama"}:
                 async for event in stream_ai_reply_with_tools(
@@ -92,11 +93,17 @@ def stream_native_message(
                                 "model": event.model,
                             }
                         )
+                    if event.type == "tool_confirmation_required":
+                        confirmation_required = True
                     yield f"data: {json.dumps(event_payload, ensure_ascii=False)}\n\n"
             else:
                 async for chunk in stream_ai_reply_from_history(history_payload, usage):
                     chunks.append(chunk)
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+            if confirmation_required:
+                db.rollback()
+                return
 
             assistant_reply = "".join(chunks).strip()
             if not assistant_reply:
