@@ -101,20 +101,19 @@ def test_tool_permission_plan_and_confirmation_enforced():
     assert write_tool.requires_confirmation
 
     import asyncio
-    with patch.object(write_tool, "handler", return_value={"ok": True}):
-        try:
-            asyncio.run(
-                execute_tool(
-                    registry,
-                    name="github_write_file",
-                    arguments={"repository": "org/repo", "path": "a.txt", "content": "x"},
-                    plan="pro",
-                    confirmed=False,
-                )
+    try:
+        asyncio.run(
+            execute_tool(
+                registry,
+                name="github_write_file",
+                arguments={"repository": "org/repo", "path": "a.txt", "content": "x"},
+                plan="pro",
+                confirmed=False,
             )
-            raise AssertionError("tool execution should require confirmation")
-        except ToolExecutionError as exc:
-            assert "confirmation" in str(exc).lower()
+        )
+        raise AssertionError("tool execution should require confirmation")
+    except ToolExecutionError as exc:
+        assert "confirmation" in str(exc).lower()
 
 
 def test_terminal_tools_require_confirmation_for_arbitrary_commands():
