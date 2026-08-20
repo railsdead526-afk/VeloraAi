@@ -20,6 +20,15 @@ async def test_tool_registry_and_executor():
             description="Safe arithmetic",
             handler=calculator,
             allowed_plans=frozenset({"free", "pro", "max", "admin"}),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number"},
+                    "b": {"type": "number"},
+                },
+                "required": ["a", "b"],
+                "additionalProperties": False,
+            },
         )
     )
 
