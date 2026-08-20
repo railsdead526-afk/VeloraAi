@@ -4,6 +4,7 @@ from unittest.mock import patch
 from app.models.ai_usage import AIUsage
 from app.models.billing import Payment, Subscription
 from app.models.conversation import Conversation
+from app.models.message import Message
 from app.models.user import User
 from app.services.ai_service import AIResult
 from tests.conftest import TestingSessionLocal, client
@@ -54,6 +55,7 @@ def test_ai_chat_and_streaming_flow():
     conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "AI integration"})
     assert conversation.status_code == 201
     conversation_id = conversation.json()["id"]
+    user_id = conversation.json()["user_id"]
 
     with patch("app.api.v1.conversations.settings.ai_provider", "mock"):
         response = client.post(f"/api/v1/conversations/{conversation_id}/messages", headers=headers, json={"content": "Hello VeloraAi", "use_rag": False, "confirm_tools": False})
@@ -67,7 +69,7 @@ def test_ai_chat_and_streaming_flow():
 
     db = TestingSessionLocal()
     try:
-        usage = db.query(AIUsage).filter(AIUsage.user_id == conversation.json()["user_id"]).all()
+        usage = db.query(AIUsage).filter(AIUsage.user_id == user_id).all()
         assert len(usage) == 2
         assert all(item.total_tokens == item.input_tokens + item.output_tokens for item in usage)
     finally:
@@ -93,10 +95,7 @@ def test_chat_failure_is_atomic():
 
     db = TestingSessionLocal()
     try:
-        messages = db.query(__import__("app.models.message", fromlist=["Message"]).Message).filter(
-            __import__("app.models.message", fromlist=["Message"]).Message.conversation_id == conversation_id
-        ).all()
-        assert messages == []
+        assert db.query(Message).filter(Message.conversation_id == conversation_id).count() == 0
         assert db.query(AIUsage).filter(AIUsage.conversation_id == conversation_id).count() == 0
     finally:
         db.close()
