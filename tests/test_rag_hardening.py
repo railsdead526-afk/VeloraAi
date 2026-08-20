@@ -32,6 +32,35 @@ def test_reindex_resets_failure_metadata(db):
     assert result.indexing_attempts == 3
 
 
+def test_index_worker_does_not_claim_processing_document(db):
+    user = User(email="rag-processing@example.com", hashed_password="test", role="free")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    document = Document(
+        user_id=user.id,
+        name="processing.txt",
+        source="text",
+        mime_type="text/plain",
+        status="processing",
+        content_hash="b" * 64,
+        raw_text="hello",
+        indexing_attempts=1,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+
+    from app.services.rag_jobs import process_document_index
+
+    process_document_index(document.id, db=db)
+    db.refresh(document)
+
+    assert document.status == "processing"
+    assert document.indexing_attempts == 1
+
+
 def test_embedding_usage_summary_tracks_query_embeddings(db, user):
     record_embedding_usage(
         db,
