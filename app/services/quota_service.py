@@ -17,6 +17,11 @@ def _month_start() -> datetime:
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+def _day_start() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def tokens_used_since(db: Session, user_id: int, since: datetime) -> int:
     total = (
         db.query(func.coalesce(func.sum(AIUsage.total_tokens), 0))
@@ -71,7 +76,9 @@ def enforce_plan_quota(
     additional_tokens: int = 0,
 ) -> None:
     _lock_user_for_quota(db, user_id)
-    since = _month_start()
+    month_since = _month_start()
+    day_since = _day_start()
+
     if policy.monthly_token_limit is not None:
         enforce_monthly_token_quota(
             db,
@@ -80,6 +87,10 @@ def enforce_plan_quota(
             additional_tokens=additional_tokens,
         )
     if policy.monthly_request_limit is not None:
-        used = requests_used_since(db, user_id, since)
+        used = requests_used_since(db, user_id, month_since)
         if used >= policy.monthly_request_limit:
             raise QuotaExceededError("Monthly AI request quota exceeded")
+    if policy.daily_request_limit is not None:
+        used = requests_used_since(db, user_id, day_since)
+        if used >= policy.daily_request_limit:
+            raise QuotaExceededError("Daily AI request quota exceeded")

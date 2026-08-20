@@ -6,13 +6,14 @@ class PlanPolicy:
     name: str
     monthly_token_limit: int | None
     monthly_request_limit: int | None
+    daily_request_limit: int | None
 
 
 PLANS: dict[str, PlanPolicy] = {
-    "free": PlanPolicy(name="free", monthly_token_limit=100_000, monthly_request_limit=100),
-    "pro": PlanPolicy(name="pro", monthly_token_limit=1_000_000, monthly_request_limit=1_000),
-    "max": PlanPolicy(name="max", monthly_token_limit=5_000_000, monthly_request_limit=10_000),
-    "admin": PlanPolicy(name="admin", monthly_token_limit=None, monthly_request_limit=None),
+    "free": PlanPolicy(name="free", monthly_token_limit=100_000, monthly_request_limit=100, daily_request_limit=20),
+    "pro": PlanPolicy(name="pro", monthly_token_limit=1_000_000, monthly_request_limit=1_000, daily_request_limit=200),
+    "max": PlanPolicy(name="max", monthly_token_limit=5_000_000, monthly_request_limit=10_000, daily_request_limit=1_000),
+    "admin": PlanPolicy(name="admin", monthly_token_limit=None, monthly_request_limit=None, daily_request_limit=None),
 }
 
 
