@@ -23,7 +23,7 @@ from app.tools.bootstrap import get_registry
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-@router.post("/{conversation_id}/messages/stream-native")
+@router.post("/{conversation_id}/messages/stream")
 @limiter.limit(settings.rate_limit_chat)
 def stream_native_message(
     request: Request,
