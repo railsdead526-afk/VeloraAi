@@ -5,3 +5,4 @@ from app.models.ai_usage import AIUsage
 from app.models.document import Document, DocumentChunk
 from app.models.embedding_usage import EmbeddingUsage
 from app.models.billing import Subscription, Payment
+from app.models.tool_confirmation import ToolConfirmation
