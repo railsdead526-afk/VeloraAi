@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -8,6 +9,9 @@ from app.core.database import SessionLocal
 from app.models.document import Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
 from app.services.rag_service import RAGError, chunk_text, content_hash, embed_texts, normalize_text
+
+
+logger = logging.getLogger(__name__)
 
 
 def process_document_index(document_id: int, db: Session | None = None) -> None:
@@ -78,24 +82,37 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
-        if document is not None:
+        logger.exception("RAG indexing failed document_id=%s", document_id)
+
+        failed = db.query(Document).filter(Document.id == document_id).first()
+        if failed is None:
+            return
+
+        try:
+            record_embedding_usage(
+                db,
+                user_id=failed.user_id,
+                document_id=failed.id,
+                provider=settings.ai_provider,
+                model=settings.embedding_model,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+                status="failed",
+                error_type=type(exc).__name__,
+                commit=False,
+            )
+        except Exception:
+            db.rollback()
+            logger.exception("Failed to record RAG indexing failure document_id=%s", document_id)
+
+        failed = db.query(Document).filter(Document.id == document_id).first()
+        if failed is not None:
+            failed.status = "failed"
+            failed.last_index_error = type(exc).__name__
             try:
-                record_embedding_usage(
-                    db,
-                    user_id=document.user_id,
-                    document_id=document.id,
-                    provider=settings.ai_provider,
-                    model=settings.embedding_model,
-                    duration_ms=int((time.perf_counter() - started) * 1000),
-                    status="failed",
-                    error_type=type(exc).__name__,
-                    commit=False,
-                )
-                document.status = "failed"
-                document.last_index_error = type(exc).__name__
                 db.commit()
             except Exception:
                 db.rollback()
+                logger.exception("Failed to persist RAG failure state document_id=%s", document_id)
     finally:
         if owns_session:
             db.close()
