@@ -27,13 +27,14 @@ def _seed_user(db):
 
 def test_duplicate_ingest_race_returns_domain_error(db):
     user = _seed_user(db)
+    user_id = user.id
     existing = Document(
-        user_id=user.id,
+        user_id=user_id,
         name="existing.txt",
         source="text",
         mime_type="text/plain",
         status="ready",
-        content_hash="a" * 64,
+        content_hash="a636bd7cd42060a4d07fa1bfbcc010eb7794c2ba721e1e3e4c20335a15b66eaf",
         raw_text="same content",
     )
     db.add(existing)
@@ -59,16 +60,16 @@ def test_duplicate_ingest_race_returns_domain_error(db):
         with pytest.raises(DuplicateDocumentError) as exc:
             create_pending_document(
                 db,
-                user_id=user.id,
+                user_id=user_id,
                 name="race.txt",
                 text="same content",
             )
 
     assert exc.value.document_id == existing.id
-    persisted = db.execute(
+    persisted = real_execute(
         select(Document).where(Document.id == existing.id)
     ).scalar_one()
-    assert persisted.content_hash == "a" * 64
+    assert persisted.content_hash == "a636bd7cd42060a4d07fa1bfbcc010eb7794c2ba721e1e3e4c20335a15b66eaf"
 
 
 def test_reindex_rejects_document_already_queued(db):
