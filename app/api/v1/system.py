@@ -32,3 +32,11 @@ def readiness_check(db: Session = Depends(get_db)):
         "service": settings.app_name,
         "environment": settings.app_env,
     }
+
+
+@router.get("/info")
+def info():
+    return {
+        "service": settings.app_name,
+        "environment": settings.app_env,
+    }
