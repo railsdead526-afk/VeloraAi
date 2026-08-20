@@ -101,6 +101,37 @@ def test_chat_failure_is_atomic():
         db.close()
 
 
+def test_streaming_failure_is_atomic():
+    _token, headers = _register_and_login("phase1-stream-failure@example.com")
+    conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "Streaming failure"}).json()
+    conversation_id = conversation["id"]
+
+    async def fail_stream(*args, **kwargs):
+        yield "partial"
+        raise RuntimeError("stream provider unavailable")
+
+    with patch("app.api.v1.conversations.settings.ai_provider", "mock"), patch(
+        "app.api.v1.conversations.stream_ai_reply_from_history",
+        side_effect=fail_stream,
+    ):
+        response = client.post(
+            f"/api/v1/conversations/{conversation_id}/messages/stream",
+            headers=headers,
+            json={"content": "This stream must rollback", "use_rag": False, "confirm_tools": False},
+        )
+
+    assert response.status_code == 200
+    assert '"type": "error"' in response.text
+    assert 'stream provider unavailable' in response.text
+
+    db = TestingSessionLocal()
+    try:
+        assert db.query(Message).filter(Message.conversation_id == conversation_id).count() == 0
+        assert db.query(AIUsage).filter(AIUsage.conversation_id == conversation_id).count() == 0
+    finally:
+        db.close()
+
+
 def test_chat_quota_rejects_post_generation_overrun():
     _token, headers = _register_and_login("phase1-ai-quota@example.com")
     conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "Quota"}).json()
@@ -141,6 +172,47 @@ def test_chat_quota_rejects_post_generation_overrun():
     db = TestingSessionLocal()
     try:
         assert db.query(AIUsage).filter(AIUsage.conversation_id == conversation_id).count() == 1
+    finally:
+        db.close()
+
+
+def test_chat_request_quota_blocks_at_limit():
+    _token, headers = _register_and_login("phase1-request-quota@example.com")
+    conversation = client.post("/api/v1/conversations", headers=headers, json={"title": "Request quota"}).json()
+    conversation_id = conversation["id"]
+
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "phase1-request-quota@example.com").one()
+        for _ in range(100):
+            db.add(
+                AIUsage(
+                    user_id=user.id,
+                    conversation_id=conversation_id,
+                    provider="mock",
+                    model="mock",
+                    input_tokens=0,
+                    output_tokens=0,
+                    total_tokens=0,
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+    with patch("app.api.v1.conversations.settings.ai_provider", "mock"), patch("app.api.v1.conversations.generate_ai_reply_from_history") as mocked:
+        response = client.post(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=headers,
+            json={"content": "must be rejected", "use_rag": False, "confirm_tools": False},
+        )
+        assert response.status_code == 429
+        mocked.assert_not_called()
+
+    db = TestingSessionLocal()
+    try:
+        assert db.query(Message).filter(Message.conversation_id == conversation_id).count() == 0
     finally:
         db.close()
 
