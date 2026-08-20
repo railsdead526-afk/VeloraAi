@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from app.main import app
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter
+from app.models.user import User
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
 
@@ -49,6 +50,20 @@ def db():
         session.close()
 
 
+@pytest.fixture
+def user(db):
+    """Provide a real FK parent for tests that exercise user-scoped records."""
+    value = User(
+        email="fixture-user@example.com",
+        hashed_password="test",
+        role="free",
+    )
+    db.add(value)
+    db.commit()
+    db.refresh(value)
+    return value
+
+
 def override_get_db():
     db = TestingSessionLocal()
     try:
@@ -61,5 +76,4 @@ Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 app.dependency_overrides[get_db] = override_get_db
-
 client = TestClient(app)
