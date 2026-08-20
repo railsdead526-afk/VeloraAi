@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.crud.ai_usage import record_ai_usage
 from app.crud.conversation import get_conversation_by_id
@@ -15,8 +16,9 @@ from app.schemas.message import MessageCreate
 from app.services.agent_context import build_agent_history, enforce_user_plan_quota
 from app.services.ai_service import stream_ai_reply_from_history
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
+from app.services.quota_service import QuotaExceededError
+from app.services.rag_service import RAGError
 from app.tools.bootstrap import get_registry
-from app.core.database import get_db
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -34,21 +36,32 @@ def stream_native_message(
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
-    enforce_user_plan_quota(db, current_user)
-    user_message = create_message(
-        db,
-        conversation_id=conversation_id,
-        role="user",
-        content=payload.content,
-        commit=False,
-    )
-    history_payload = build_agent_history(
-        db,
-        conversation_id=conversation_id,
-        user_id=current_user.id,
-        query=payload.content,
-        use_rag=payload.use_rag,
-    )
+    try:
+        enforce_user_plan_quota(db, current_user)
+        user_message = create_message(
+            db,
+            conversation_id=conversation_id,
+            role="user",
+            content=payload.content,
+            commit=False,
+        )
+        history_payload = build_agent_history(
+            db,
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            query=payload.content,
+            use_rag=payload.use_rag,
+        )
+    except QuotaExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except RAGError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG retrieval is temporarily unavailable",
+        ) from exc
+
     user_id = current_user.id
     plan = getattr(current_user, "role", "free")
 
@@ -124,6 +137,9 @@ def stream_native_message(
         except asyncio.CancelledError:
             db.rollback()
             raise
+        except QuotaExceededError as exc:
+            db.rollback()
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except RuntimeError as exc:
             db.rollback()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
