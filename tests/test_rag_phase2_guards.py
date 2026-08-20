@@ -1,8 +1,7 @@
 from unittest.mock import patch
-import sqlite3
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 
 from app.models.document import Document
 from app.models.user import User
@@ -41,23 +40,22 @@ def test_duplicate_ingest_race_returns_domain_error(db):
     db.commit()
     db.refresh(existing)
 
-    original_commit = db.commit
-    first_commit = True
+    real_execute = db.execute
+    first_lookup = True
 
-    def simulated_race():
-        nonlocal first_commit
-        if first_commit:
-            first_commit = False
-            raise IntegrityError(
-                "INSERT",
-                {},
-                sqlite3.IntegrityError(
-                    "UNIQUE constraint failed: documents.user_id, documents.content_hash"
-                ),
-            )
-        original_commit()
+    def simulated_stale_read(statement, *args, **kwargs):
+        nonlocal first_lookup
+        if first_lookup:
+            first_lookup = False
 
-    with patch.object(db, "commit", side_effect=simulated_race):
+            class EmptyResult:
+                def scalar_one_or_none(self):
+                    return None
+
+            return EmptyResult()
+        return real_execute(statement, *args, **kwargs)
+
+    with patch.object(db, "execute", side_effect=simulated_stale_read):
         with pytest.raises(DuplicateDocumentError) as exc:
             create_pending_document(
                 db,
@@ -67,6 +65,10 @@ def test_duplicate_ingest_race_returns_domain_error(db):
             )
 
     assert exc.value.document_id == existing.id
+    persisted = db.execute(
+        select(Document).where(Document.id == existing.id)
+    ).scalar_one()
+    assert persisted.content_hash == "a" * 64
 
 
 def test_reindex_rejects_document_already_queued(db):
