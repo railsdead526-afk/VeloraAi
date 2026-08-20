@@ -3,6 +3,7 @@ import json
 import pytest
 
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
+from app.services.tool_confirmation import create_confirmation_token
 from app.tools.base import ToolDefinition
 from app.tools.registry import ToolRegistry
 
@@ -177,9 +178,96 @@ async def test_native_stream_emits_confirmation_required_without_execution(monke
             plan="pro",
             confirmed=False,
             registry=registry,
+            user_id=42,
+            conversation_id=7,
         )
     ]
 
     assert executed == []
-    assert any(event.type == "tool_confirmation_required" for event in events)
+    confirmation = next(event for event in events if event.type == "tool_confirmation_required")
+    assert confirmation.confirmation_token
     assert events[-1].type == "tool_end"
+
+
+@pytest.mark.asyncio
+async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatch):
+    monkeypatch.setattr("app.services.ai_tool_stream.settings.ai_provider", "llama")
+    monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
+    monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
+    monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_model", "test-model")
+    monkeypatch.setattr("app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools))
+
+    registry = ToolRegistry()
+    executed = []
+    registry.register(
+        ToolDefinition(
+            name="dangerous_write",
+            description="Write something important",
+            handler=lambda arguments: executed.append(arguments) or {"ok": True},
+            allowed_plans=frozenset({"pro", "max", "admin"}),
+            requires_confirmation=True,
+        )
+    )
+
+    tool_request = {
+        "choices": [{"delta": {"tool_calls": [{
+            "index": 0,
+            "id": "call-3",
+            "function": {"name": "dangerous_write", "arguments": '{"value":"approved"}'},
+        }]}}]
+    }
+    final_round = [
+        _sse({"choices": [{"delta": {"content": "Done."}}]}),
+        _sse({"usage": {"prompt_tokens": 8, "completion_tokens": 2}}),
+        "data: [DONE]",
+    ]
+    first_client = _FakeClient([[ _sse(tool_request), "data: [DONE]" ]])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: first_client)
+
+    events = [
+        event
+        async for event in stream_ai_reply_with_tools(
+            [{"role": "user", "content": "write approved"}],
+            plan="pro",
+            confirmed=False,
+            registry=registry,
+            user_id=42,
+            conversation_id=7,
+        )
+    ]
+    token = next(event.confirmation_token for event in events if event.type == "tool_confirmation_required")
+
+    second_client = _FakeClient([final_round])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: second_client)
+    resumed = [
+        event
+        async for event in stream_ai_reply_with_tools(
+            [{"role": "user", "content": "write approved"}],
+            plan="pro",
+            confirmed=False,
+            registry=registry,
+            user_id=42,
+            conversation_id=7,
+            approved_confirmation_token=token,
+        )
+    ]
+
+    assert executed == [{"value": "approved"}]
+    assert resumed[-1].type == "done"
+
+    mismatched_client = _FakeClient([[ _sse(tool_request), "data: [DONE]" ]])
+    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: mismatched_client)
+    mismatched = [
+        event
+        async for event in stream_ai_reply_with_tools(
+            [{"role": "user", "content": "write approved"}],
+            plan="pro",
+            confirmed=False,
+            registry=registry,
+            user_id=42,
+            conversation_id=8,
+            approved_confirmation_token=token,
+        )
+    ]
+    assert len(executed) == 1
+    assert any(event.type == "tool_confirmation_required" for event in mismatched)
