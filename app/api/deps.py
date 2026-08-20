@@ -28,7 +28,7 @@ def get_current_user(
         raise credentials_exception
 
     user = get_user_by_email(db, email)
-    if user is None:
+    if user is None or not user.is_active:
         raise credentials_exception
 
     return user
