@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import sqlite3
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -47,7 +48,13 @@ def test_duplicate_ingest_race_returns_domain_error(db):
         nonlocal first_commit
         if first_commit:
             first_commit = False
-            raise IntegrityError("INSERT", {}, RuntimeError("unique constraint"))
+            raise IntegrityError(
+                "INSERT",
+                {},
+                sqlite3.IntegrityError(
+                    "UNIQUE constraint failed: documents.user_id, documents.content_hash"
+                ),
+            )
         original_commit()
 
     with patch.object(db, "commit", side_effect=simulated_race):
