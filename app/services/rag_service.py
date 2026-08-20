@@ -6,6 +6,7 @@ from typing import Iterable
 
 import httpx
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -21,6 +22,10 @@ class DuplicateDocumentError(RAGError):
     def __init__(self, document_id: int):
         self.document_id = document_id
         super().__init__(f"Document already exists as document {document_id}")
+
+
+class DocumentIndexInProgressError(RAGError):
+    pass
 
 
 def normalize_text(text: str) -> str:
@@ -144,7 +149,16 @@ def create_pending_document(
         raw_text=normalized,
     )
     db.add(document)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing = db.execute(
+            select(Document).where(Document.user_id == user_id, Document.content_hash == digest)
+        ).scalar_one_or_none()
+        if existing:
+            raise DuplicateDocumentError(existing.id) from exc
+        raise
     db.refresh(document)
     return document
 
@@ -185,6 +199,8 @@ def ingest_text(
 
 def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
     document = _get_document(db, user_id=user_id, document_id=document_id)
+    if document.status in {"queued", "processing"}:
+        raise DocumentIndexInProgressError("Document indexing is already in progress")
     document.status = "queued"
     document.last_index_error = None
     db.commit()
