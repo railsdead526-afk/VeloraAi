@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -36,7 +37,7 @@ def _decode(token: str) -> dict[str, Any] | None:
         if not isinstance(payload, dict):
             return None
         return payload
-    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError, binascii.Error):
         return None
 
 
@@ -75,7 +76,11 @@ def verify_confirmation_token(
     payload = _decode(token)
     if payload is None:
         return False
-    if int(payload.get("exp", 0)) < int(time.time()):
+    try:
+        expires_at = int(payload.get("exp", 0))
+    except (TypeError, ValueError):
+        return False
+    if expires_at < int(time.time()):
         return False
     return (
         payload.get("sub") == user_id
