@@ -13,10 +13,18 @@ from app.crud.ai_usage import record_ai_usage
 from app.crud.conversation import get_conversation_by_id
 from app.crud.message import create_message
 from app.schemas.message import MessageCreate
-from app.services.agent_context import build_agent_history, enforce_user_plan_quota
+from app.services.agent_context import (
+    build_agent_history,
+    enforce_user_plan_quota,
+    reserve_user_plan_request_quota,
+)
 from app.services.ai_service import stream_ai_reply_from_history
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
-from app.services.quota_service import QuotaExceededError
+from app.services.quota_service import (
+    QuotaExceededError,
+    complete_request_reservation,
+    release_request_reservation,
+)
 from app.services.rag_service import RAGError
 from app.tools.bootstrap import get_registry
 
@@ -36,8 +44,9 @@ def stream_native_message(
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
+    reservation_id: int | None = None
     try:
-        enforce_user_plan_quota(db, current_user)
+        reservation_id = reserve_user_plan_request_quota(db, current_user)
         history_payload = build_agent_history(
             db,
             conversation_id=conversation_id,
@@ -50,6 +59,9 @@ def stream_native_message(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except RAGError as exc:
         db.rollback()
+        if reservation_id is not None:
+            release_request_reservation(db, reservation_id)
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="RAG retrieval is temporarily unavailable",
@@ -100,7 +112,9 @@ def stream_native_message(
                     yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
 
             if confirmation_required:
-                db.rollback()
+                if reservation_id is not None:
+                    release_request_reservation(db, reservation_id)
+                    db.commit()
                 return
 
             assistant_reply = "".join(chunks).strip()
@@ -141,25 +155,43 @@ def stream_native_message(
                 db,
                 current_user,
                 additional_tokens=int(input_tokens) + int(output_tokens),
+                check_request_limits=False,
             )
+            if reservation_id is not None:
+                complete_request_reservation(db, reservation_id)
             db.commit()
             db.refresh(user_message)
             db.refresh(assistant_message)
             yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_message.id}, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             db.rollback()
+            if reservation_id is not None:
+                release_request_reservation(db, reservation_id)
+                db.commit()
             raise
         except QuotaExceededError as exc:
             db.rollback()
+            if reservation_id is not None:
+                release_request_reservation(db, reservation_id)
+                db.commit()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except RuntimeError as exc:
             db.rollback()
+            if reservation_id is not None:
+                release_request_reservation(db, reservation_id)
+                db.commit()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except HTTPException as exc:
             db.rollback()
+            if reservation_id is not None:
+                release_request_reservation(db, reservation_id)
+                db.commit()
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)}, ensure_ascii=False)}\n\n"
         except Exception:
             db.rollback()
+            if reservation_id is not None:
+                release_request_reservation(db, reservation_id)
+                db.commit()
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
