@@ -3,16 +3,25 @@ from sqlalchemy.orm import Session
 from app.core.plans import get_plan_policy
 from app.crud.message import get_messages_by_conversation
 from app.models.document import Document
-from app.services.quota_service import enforce_plan_quota
+from app.services.quota_service import enforce_plan_quota, reserve_plan_request_quota
 from app.services.rag_service import build_context, retrieve_chunks
 
 
-def enforce_user_plan_quota(db: Session, user, *, additional_tokens: int = 0) -> None:
+def enforce_user_plan_quota(db: Session, user, *, additional_tokens: int = 0, check_request_limits: bool = True) -> None:
     enforce_plan_quota(
         db,
         user_id=user.id,
         policy=get_plan_policy(getattr(user, "role", None)),
         additional_tokens=additional_tokens,
+        check_request_limits=check_request_limits,
+    )
+
+
+def reserve_user_plan_request_quota(db: Session, user) -> int | None:
+    return reserve_plan_request_quota(
+        db,
+        user_id=user.id,
+        policy=get_plan_policy(getattr(user, "role", None)),
     )
 
 

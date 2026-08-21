@@ -15,6 +15,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     role = Column(String, nullable=False, default="free")
+    quota_lock_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete")
     documents = relationship("Document", back_populates="user", cascade="all, delete")
