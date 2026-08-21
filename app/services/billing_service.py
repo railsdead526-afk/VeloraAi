@@ -61,10 +61,12 @@ def apply_payment_notification(
     payment_type: str | None = None,
 ) -> Payment | None:
     payment = db.execute(
-        select(Payment).where(
+        select(Payment)
+        .where(
             Payment.provider == provider,
             Payment.provider_order_id == provider_order_id,
         )
+        .with_for_update()
     ).scalar_one_or_none()
     if payment is None:
         return None
