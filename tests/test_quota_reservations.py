@@ -1,4 +1,4 @@
-from datetime import timedelta, timezone, datetime
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -6,8 +6,8 @@ from app.core.plans import PlanPolicy
 from app.models.ai_request_reservation import AIRequestReservation
 from app.services.quota_service import (
     QuotaExceededError,
-    reserve_plan_request_quota,
     release_request_reservation,
+    reserve_plan_request_quota,
 )
 
 
@@ -21,7 +21,7 @@ def _policy(daily: int = 1, monthly: int = 10) -> PlanPolicy:
 
 
 def test_reservation_blocks_second_request(db, user):
-    policy = _policy(daily=1, monthly=1)
+    policy = _policy(daily=1, monthly=10)
 
     first = reserve_plan_request_quota(db, user_id=user.id, policy=policy)
     assert first is not None
@@ -31,7 +31,7 @@ def test_reservation_blocks_second_request(db, user):
 
 
 def test_released_reservation_returns_slot(db, user):
-    policy = _policy(daily=1, monthly=2)
+    policy = _policy(daily=1, monthly=10)
 
     first = reserve_plan_request_quota(db, user_id=user.id, policy=policy)
     assert first is not None
@@ -43,7 +43,7 @@ def test_released_reservation_returns_slot(db, user):
 
 
 def test_expired_reservation_does_not_block_quota(db, user):
-    policy = _policy(daily=1, monthly=2)
+    policy = _policy(daily=1, monthly=10)
 
     first = reserve_plan_request_quota(db, user_id=user.id, policy=policy)
     assert first is not None
