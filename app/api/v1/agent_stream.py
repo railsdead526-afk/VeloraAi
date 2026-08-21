@@ -20,6 +20,7 @@ from app.services.agent_context import (
 )
 from app.services.ai_service import stream_ai_reply_from_history
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
+from app.services.audit_service import record_audit_event_best_effort
 from app.services.quota_service import (
     QuotaExceededError,
     complete_request_reservation,
@@ -69,6 +70,13 @@ def stream_native_message(
 
     user_id = current_user.id
     plan = getattr(current_user, "role", "free")
+    record_audit_event_best_effort(
+        user_id=user_id,
+        event="agent_request_started",
+        resource_type="conversation",
+        resource_id=str(conversation_id),
+        metadata={"plan": plan, "rag": bool(payload.use_rag)},
+    )
 
     async def event_stream():
         chunks: list[str] = []
@@ -95,6 +103,22 @@ def stream_native_message(
                         event_payload["tool_call_id"] = event.tool_call_id
                     if event.confirmation_token:
                         event_payload["confirmation_token"] = event.confirmation_token
+                    if event.type == "tool_start" and event.name:
+                        record_audit_event_best_effort(
+                            user_id=user_id,
+                            event="agent_tool_requested",
+                            resource_type="tool",
+                            resource_id=event.name,
+                        )
+                    if event.type == "tool_confirmation_required":
+                        confirmation_required = True
+                        record_audit_event_best_effort(
+                            user_id=user_id,
+                            event="agent_tool_confirmation_required",
+                            status="pending",
+                            resource_type="tool",
+                            resource_id=event.name,
+                        )
                     if event.type == "done":
                         usage.update(
                             {
@@ -103,8 +127,6 @@ def stream_native_message(
                                 "model": event.model,
                             }
                         )
-                    if event.type == "tool_confirmation_required":
-                        confirmation_required = True
                     yield f"data: {json.dumps(event_payload, ensure_ascii=False)}\n\n"
             else:
                 async for chunk in stream_ai_reply_from_history(history_payload, usage):
@@ -162,36 +184,78 @@ def stream_native_message(
             db.commit()
             db.refresh(user_message)
             db.refresh(assistant_message)
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_completed",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+                metadata={"model": model},
+            )
             yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_message.id}, ensure_ascii=False)}\n\n"
         except asyncio.CancelledError:
             db.rollback()
             if reservation_id is not None:
                 release_request_reservation(db, reservation_id)
                 db.commit()
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_failed",
+                status="cancelled",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+            )
             raise
         except QuotaExceededError as exc:
             db.rollback()
             if reservation_id is not None:
                 release_request_reservation(db, reservation_id)
                 db.commit()
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_failed",
+                status="quota_exceeded",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+            )
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except RuntimeError as exc:
             db.rollback()
             if reservation_id is not None:
                 release_request_reservation(db, reservation_id)
                 db.commit()
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_failed",
+                status="provider_or_runtime_error",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+            )
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
         except HTTPException as exc:
             db.rollback()
             if reservation_id is not None:
                 release_request_reservation(db, reservation_id)
                 db.commit()
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_failed",
+                status=f"http_{exc.status_code}",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+            )
             yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)}, ensure_ascii=False)}\n\n"
         except Exception:
             db.rollback()
             if reservation_id is not None:
                 release_request_reservation(db, reservation_id)
                 db.commit()
+            record_audit_event_best_effort(
+                user_id=user_id,
+                event="agent_request_failed",
+                status="internal_error",
+                resource_type="conversation",
+                resource_id=str(conversation_id),
+            )
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
