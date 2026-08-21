@@ -19,19 +19,17 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("released_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint(
+            "status IN ('reserved', 'completed', 'released')",
+            name="ck_ai_request_reservations_status",
+        ),
     )
     op.create_index("ix_ai_request_reservations_user_id", "ai_request_reservations", ["user_id"])
     op.create_index("ix_ai_request_reservations_status", "ai_request_reservations", ["status"])
     op.create_index("ix_ai_request_reservations_expires_at", "ai_request_reservations", ["expires_at"])
-    op.create_check_constraint(
-        "ck_ai_request_reservations_status",
-        "ai_request_reservations",
-        "status IN ('reserved', 'completed', 'released')",
-    )
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_ai_request_reservations_status", "ai_request_reservations", type_="check")
     op.drop_index("ix_ai_request_reservations_expires_at", table_name="ai_request_reservations")
     op.drop_index("ix_ai_request_reservations_status", table_name="ai_request_reservations")
     op.drop_index("ix_ai_request_reservations_user_id", table_name="ai_request_reservations")
