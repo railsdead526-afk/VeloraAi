@@ -8,6 +8,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.add_column("users", sa.Column("quota_lock_version", sa.Integer(), nullable=False, server_default="0"))
+
     op.create_table(
         "ai_request_reservations",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -34,3 +36,4 @@ def downgrade() -> None:
     op.drop_index("ix_ai_request_reservations_status", table_name="ai_request_reservations")
     op.drop_index("ix_ai_request_reservations_user_id", table_name="ai_request_reservations")
     op.drop_table("ai_request_reservations")
+    op.drop_column("users", "quota_lock_version")
