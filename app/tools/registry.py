@@ -19,6 +19,15 @@ class ToolRegistry:
             raise ValueError("Tool max_calls_per_request must be at least one")
         self._tools[tool.name] = tool
 
+    def replace(self, tool: ToolDefinition) -> None:
+        if tool.name not in self._tools:
+            raise KeyError(f"Unknown tool: {tool.name}")
+        if tool.timeout_seconds <= 0:
+            raise ValueError("Tool timeout must be greater than zero")
+        if tool.max_calls_per_request < 1:
+            raise ValueError("Tool max_calls_per_request must be at least one")
+        self._tools[tool.name] = tool
+
     def get(self, name: str) -> ToolDefinition:
         try:
             return self._tools[name]
