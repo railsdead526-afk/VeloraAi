@@ -8,6 +8,19 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Data portability export** (`GET /api/v1/auth/me/export`), satisfying the
+  UU PDP right to portability. Returns account, conversations, messages,
+  documents, subscriptions, payments, usage, and audit history as a downloadable
+  JSON archive. Password hashes, encrypted third-party tokens, refresh-token
+  digests, and embedding vectors are excluded by construction, with tests
+  asserting they never appear: an export file must be safe to treat as public.
+  Rate limited to 3/hour and audited, because a bulk personal-data read is
+  exactly what an incident investigation needs to see.
+- Account panel in the web client: change password, list and revoke sessions,
+  resend verification, download the data export, and close the account behind
+  an email-confirmation prompt.
+- Billing panel showing plan pricing in IDR and starting Midtrans checkout,
+  with a visible sandbox-mode warning.
 - Built-in SMTP transport for verification and password-reset email, selected
   automatically when `SMTP_HOST` is set. TLS certificate verification is
   mandatory; delivery failures are logged and alerted on rather than turning

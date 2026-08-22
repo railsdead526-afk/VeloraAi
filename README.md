@@ -171,6 +171,7 @@ Auth
   POST   /api/v1/auth/password-reset/confirm
   POST   /api/v1/auth/password
   GET    /api/v1/auth/me
+  GET    /api/v1/auth/me/export             UU PDP portability archive
   DELETE /api/v1/auth/me                    soft delete
 
 Integrations
@@ -248,7 +249,7 @@ Still open before taking public money — none of these are code problems:
 - legal entity, ToS and Privacy Policy in Bahasa Indonesia, PPN handling
   ([`docs/legal/compliance-checklist.md`](docs/legal/compliance-checklist.md))
 - SMTP credentials for a real mailbox (the transport itself is built in)
-- remaining user-facing pages: billing/checkout, documents, account settings
+- remaining user-facing pages: document management, verification landing routes
 - recurring card-on-file billing
 - external penetration test and a completed restore drill
 

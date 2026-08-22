@@ -9,7 +9,7 @@ Design notes:
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import client_ip, get_current_user, require_roles
@@ -55,6 +55,7 @@ from app.services.auth_tokens import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
+from app.services.data_export import render_export
 from app.services.notification_service import (
     send_password_reset_email,
     send_verification_email,
@@ -332,6 +333,36 @@ def change_password(
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return _user_payload(db, current_user)
+
+
+@router.get("/me/export")
+@limiter.limit("3/hour")
+def export_my_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Portable copy of everything held about this account (UU PDP art. 13).
+
+    Rate limited because the query fans out across every user-owned table, and
+    audited because a bulk personal-data read is exactly the event an incident
+    investigation needs to see.
+    """
+    filename, body = render_export(db, user=current_user)
+    record_audit_event_best_effort(
+        user_id=current_user.id,
+        event="account.data_exported",
+        resource_type="account",
+        resource_id=str(current_user.id),
+    )
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.delete("/me", status_code=status.HTTP_200_OK)

@@ -73,9 +73,9 @@ records are retained as legally required.
 Access, rectification, erasure, restriction, objection, portability, and
 withdrawal of consent. Exercise them at `<EMAIL>`; we respond within 30 days.
 
-Currently self-service: deletion (`DELETE /api/v1/auth/me`), disconnecting
-integrations, deleting individual conversations and documents.
-Currently by request: full data export. `<Build the export endpoint.>`
+Currently self-service: full data export, deletion (`DELETE /api/v1/auth/me`),
+disconnecting integrations, deleting individual conversations and documents.
+Currently by request: rectification of billing records.
 
 ## 8. Cookies
 

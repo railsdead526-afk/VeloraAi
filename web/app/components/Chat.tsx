@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
 
+import AccountPanel from './AccountPanel'
 import IntegrationsPanel from './IntegrationsPanel'
 import {
   MIN_PASSWORD_LENGTH,
@@ -58,6 +59,7 @@ export default function Chat() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [toolActivity, setToolActivity] = useState('')
   const [showIntegrations, setShowIntegrations] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -431,6 +433,16 @@ export default function Chat() {
   return (
     <main style={styles.app}>
       {showIntegrations && <IntegrationsPanel onClose={() => setShowIntegrations(false)} />}
+      {showAccount && user && (
+        <AccountPanel
+          user={user}
+          onClose={() => setShowAccount(false)}
+          onSignedOut={() => {
+            setShowAccount(false)
+            void handleLogout()
+          }}
+        />
+      )}
       <aside style={styles.sidebar}>
         <div>
           <div style={styles.logo}>VELORAAI</div>
@@ -444,6 +456,7 @@ export default function Chat() {
             </button>
           ))}
         </div>
+        <button onClick={() => setShowAccount(true)} style={styles.link}>Account</button>
         <button onClick={() => setShowIntegrations(true)} style={styles.link}>Integrations</button>
         <button onClick={() => void handleLogout()} style={styles.link}>Sign out</button>
       </aside>

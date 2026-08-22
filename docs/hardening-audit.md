@@ -99,8 +99,11 @@ These are deliberately listed as open. None is satisfied by code alone.
       `SMTP_HOST` is set; production refuses to boot without it. A hosted
       provider can still be installed through `set_email_sender`.
 - [x] Integrations UI, so users can actually connect their own credentials.
-- [ ] Remaining user-facing pages: billing/checkout, document management,
-      account settings, and email-verification landing pages.
+- [x] Account panel: password change, session list, sign-out everywhere,
+      resend verification, data export, account closure.
+- [x] Billing panel wired to Midtrans Snap.
+- [ ] Remaining user-facing pages: document management and the
+      email-verification / password-reset landing routes.
 - [ ] Provision production credentials through the platform secret store and
       run an end-to-end AI provider smoke test.
 - [ ] Configure production Midtrans and set real Pro/Max prices.
@@ -121,7 +124,9 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [ ] Stand up monitoring, alerting, and on-call rotation against §8 of the
       runbook.
 - [ ] Recurring card-on-file billing via Midtrans tokenisation.
-- [ ] Data export endpoint for UU PDP portability rights.
+- [x] Data export endpoint for UU PDP portability rights
+      (`GET /api/v1/auth/me/export`), excluding password hashes and
+      third-party secrets by construction.
 - [ ] OAuth flows per provider, so VeloraAi never handles a pasted long-lived
       personal access token.
 - [ ] Organisation and team model for B2B sales.

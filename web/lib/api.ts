@@ -309,6 +309,40 @@ export async function resendVerification(): Promise<void> {
   await apiFetch<{ status: string }>('/api/v1/auth/resend-verification', { method: 'POST' })
 }
 
+export async function deleteAccount(): Promise<void> {
+  await apiFetch<{ status: string }>('/api/v1/auth/me', { method: 'DELETE' })
+  clearAuthToken()
+}
+
+/** Downloads the UU PDP portability archive in the browser. */
+export async function downloadMyData(): Promise<void> {
+  await ensureFreshToken()
+  const token = getToken()
+  const response = await fetch(`${API_BASE_URL}/api/v1/auth/me/export`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    throw new Error(
+      response.status === 429
+        ? 'Export is rate limited. Try again in an hour.'
+        : `Export failed with status ${response.status}`,
+    )
+  }
+
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = match?.[1] || 'veloraai-export.json'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  // Release the object URL, otherwise the blob is pinned for the tab's life.
+  URL.revokeObjectURL(url)
+}
+
 export async function changePassword(current: string, next: string): Promise<void> {
   await apiFetch<{ status: string }>('/api/v1/auth/password', {
     method: 'POST',
@@ -337,6 +371,44 @@ export async function connectIntegration(
 
 export async function disconnectIntegration(provider: IntegrationProvider): Promise<void> {
   await apiFetch<{ status: string }>(`/api/v1/integrations/${provider}`, { method: 'DELETE' })
+}
+
+// --------------------------------------------------------------------------
+// Billing
+// --------------------------------------------------------------------------
+
+export interface PaymentConfig {
+  provider: string
+  is_production: boolean
+  pro_price_idr: number
+  max_price_idr: number
+}
+
+export interface PaymentIntent {
+  order_id: string
+  amount: number
+  currency: string
+  snap_token: string
+  redirect_url: string
+}
+
+export async function getPaymentConfig(): Promise<PaymentConfig> {
+  return apiFetch<PaymentConfig>('/api/v1/payments/config')
+}
+
+export async function createPayment(plan: 'pro' | 'max'): Promise<PaymentIntent> {
+  return apiFetch<PaymentIntent>('/api/v1/payments/create', {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  })
+}
+
+export function formatIdr(amount: number): string {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 // --------------------------------------------------------------------------

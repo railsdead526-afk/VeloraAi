@@ -45,7 +45,8 @@ records, and encrypted third-party credentials. All are personal data.
 - [ ] Implement data-subject rights. Current status:
   - [x] Right to erasure — `DELETE /api/v1/auth/me` (soft delete, financial
         records retained as legally required)
-  - [ ] Right of access / portability — **export endpoint not yet built**
+  - [x] Right of access / portability — `GET /api/v1/auth/me/export`, and a
+        one-click download in the account panel
   - [ ] Right to rectification — partially covered by account settings
 - [ ] Appoint a **Data Protection Officer** if required by scale. `[counsel]`
 - [ ] Breach notification within **3×24 hours** to the authority and to affected
