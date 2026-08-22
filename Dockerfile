@@ -6,7 +6,10 @@ FROM python:3.11-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# `upgrade` matters: the base image lags security updates between releases,
+# and Trivy gates the build on fixable HIGH/CRITICAL findings.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,6 +27,7 @@ ARG GIT_SHA=unknown
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
     APP_VERSION=${APP_VERSION} \
     GIT_SHA=${GIT_SHA}
 
@@ -33,14 +37,18 @@ LABEL org.opencontainers.image.title="VeloraAi" \
       org.opencontainers.image.licenses="Proprietary"
 
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends libpq5 curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && find /usr/local/lib/python3.11 -name '__pycache__' -type d -prune -exec rm -rf {} + \
+    && rm -rf /root/.cache
 
 WORKDIR /app
 
 COPY --from=builder /wheels /wheels
 COPY requirements.txt .
-RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+RUN pip install --no-cache-dir --upgrade pip setuptools \
+    && pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
     && rm -rf /wheels
 
 COPY app ./app
