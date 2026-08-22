@@ -71,6 +71,8 @@ class Settings:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
         if self.is_production:
+            if self.ai_provider == "mock":
+                raise RuntimeError("AI_PROVIDER=mock is only allowed outside production")
             if not self.secret_key or self.secret_key == "change-this-secret-key":
                 raise RuntimeError("SECRET_KEY must be configured in production")
             if len(self.secret_key) < 32:
