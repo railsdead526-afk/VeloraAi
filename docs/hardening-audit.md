@@ -98,6 +98,8 @@ These are deliberately listed as open. None is satisfied by code alone.
       enforced by runtime configuration.
 - [ ] Schedule `scripts/run_maintenance.py` hourly **and alert on failure**.
       Without it, subscriptions never expire.
+- [ ] Move `.github/workflows-proposed/ci.yml` into `.github/workflows/`.
+      The committed workflow is stale and will fail until this is done.
 - [ ] Enable branch protection on `main`: required `CI passed`, required
       review, no force push.
 - [ ] Make the repository private.

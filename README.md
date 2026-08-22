@@ -207,6 +207,12 @@ mypy
 pip-audit -r requirements.txt --strict
 ```
 
+> **One manual step is pending.** The hardened pipeline lives at
+> `.github/workflows-proposed/ci.yml` because the automation used to prepare
+> this release lacked GitHub's `workflows` permission. Move it into
+> `.github/workflows/` and enable branch protection — see
+> [`.github/workflows-proposed/README.md`](.github/workflows-proposed/README.md).
+
 CI runs seven required jobs on every push and pull request: lint and types,
 tests with an enforced coverage floor, PostgreSQL migrations **including a full
 `downgrade base` reversibility check**, security scanning (`pip-audit`, bandit
