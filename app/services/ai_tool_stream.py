@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.services.ai_provider import auth_headers, build_api_messages, get_provider_config, parse_usage
 from app.services.tool_confirmation import create_confirmation_token, verify_confirmation_token
 from app.tools.executor import ToolExecutionError, execute_tool
+from app.tools.policy import policy
 from app.tools.registry import ToolRegistry
 from app.tools.selector import select_tools
 
@@ -242,7 +243,7 @@ async def stream_ai_reply_with_tools(
                     try:
                         arguments = _parse_tool_arguments(call["function"]["arguments"])
                         approved = False
-                        if not tool.requires_confirmation:
+                        if not policy.requires_approval(tool):
                             approved = True
                         elif confirmed:
                             approved = True
