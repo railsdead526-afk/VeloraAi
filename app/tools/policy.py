@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Iterable
 
 from app.tools.base import ToolDefinition
-
-
-class ToolRisk(StrEnum):
-    LOW = "low"
-    WRITE = "write"
-    DESTRUCTIVE = "destructive"
-    PRIVILEGED = "privileged"
 
 
 class ToolPolicy:
