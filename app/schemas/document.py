@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentCreate(BaseModel):
@@ -11,6 +11,8 @@ class DocumentCreate(BaseModel):
 
 
 class DocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     source: str
@@ -21,10 +23,6 @@ class DocumentResponse(BaseModel):
     last_indexed_at: datetime | None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        orm_mode = True
-        from_attributes = True
 
 
 class DocumentSearchRequest(BaseModel):
