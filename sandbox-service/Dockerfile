@@ -13,10 +13,10 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY sandbox_app.py .
 
 EXPOSE 8080
 
 # This service is a privileged controller. Run it only on a dedicated
 # sandbox host, never on the main VeloraAi application host.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "sandbox_app:app", "--host", "0.0.0.0", "--port", "8080"]
