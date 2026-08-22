@@ -1,6 +1,7 @@
 from app.tools.builtin import register_platform_tools
 from app.tools.cloudflare_builtin import register_cloudflare_tools
 from app.tools.registry import registry
+from app.tools.supabase_sql_registry import harden_supabase_sql_registry
 
 _INITIALIZED = False
 
@@ -10,5 +11,6 @@ def get_registry():
     if not _INITIALIZED:
         register_platform_tools(registry)
         register_cloudflare_tools(registry)
+        harden_supabase_sql_registry(registry)
         _INITIALIZED = True
     return registry

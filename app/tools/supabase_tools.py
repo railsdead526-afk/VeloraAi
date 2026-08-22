@@ -1,6 +1,7 @@
 import os
 from typing import Any
 
+from app.services.supabase_sql_policy import validate_read_only_sql
 from app.tools.providers import ToolProviderError, _request
 
 
@@ -30,6 +31,17 @@ def supabase_get_project(arguments: dict[str, Any]) -> dict[str, Any]:
 def supabase_list_branches(arguments: dict[str, Any]) -> dict[str, Any]:
     project = _project(arguments)
     return _request("GET", f"https://api.supabase.com/v1/projects/{project}/branches", token=_token())
+
+
+def supabase_query_sql(arguments: dict[str, Any]) -> dict[str, Any]:
+    project = _project(arguments)
+    query = validate_read_only_sql(arguments.get("query", ""))
+    return _request(
+        "POST",
+        f"https://api.supabase.com/v1/projects/{project}/database/query",
+        token=_token(),
+        json={"query": query},
+    )
 
 
 def supabase_execute_sql(arguments: dict[str, Any]) -> dict[str, Any]:
