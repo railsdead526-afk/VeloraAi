@@ -1,6 +1,16 @@
 # VeloraAi
 
-VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, percakapan, AI chat, streaming response, dan pencatatan penggunaan AI.
+VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, percakapan, AI chat, streaming response, pencatatan penggunaan AI, RAG, dan tool execution terisolasi.
+
+## Status arsitektur
+
+- Backend production target: **Railway**
+- Frontend target: **Vercel**
+- Production database: **PostgreSQL**
+- Production shared rate limiting: **Redis-compatible storage**
+- AI providers: **OpenAI, Llama-compatible, mock untuk development/test**
+- Terminal/tool execution: **dedicated isolated sandbox service**
+- Payments: **Midtrans**, sandbox untuk development dan live endpoints hanya untuk production
 
 ## Fitur
 
@@ -13,6 +23,10 @@ VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, perc
 - AI retry dan timeout
 - Streaming AI melalui Server-Sent Events (SSE)
 - AI usage/token tracking
+- RAG document indexing dan search
+- Capability-based tool policy
+- Risk-aware tool approval
+- Isolated terminal sandbox
 - PostgreSQL support
 - Alembic database migrations
 - API rate limiting
@@ -23,16 +37,17 @@ VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, perc
 ## Tech Stack
 
 - FastAPI
+- Pydantic v2
 - SQLAlchemy
 - PostgreSQL / SQLite untuk development dan test
 - Alembic
-- Pydantic
 - HTTPX
 - SlowAPI
 - JWT
 - Pytest
+- Docker
 
-## Setup
+## Setup development
 
 ```bash
 python -m venv venv
@@ -42,7 +57,24 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-Untuk production, gunakan PostgreSQL, shared rate-limit storage, `SECRET_KEY` yang kuat, dan konfigurasi AI provider yang valid. Jangan aktifkan debug di production.
+Development dapat menggunakan SQLite dan `AI_PROVIDER=mock`. Production **tidak boleh** memakai mock provider, SQLite, in-memory rate limiting, atau endpoint Midtrans sandbox.
+
+## Production
+
+Backend dideploy ke Railway menggunakan `Dockerfile` dan `railway.toml`. Railway melakukan health check pada `/api/v1/health`.
+
+Production wajib menyediakan:
+
+- PostgreSQL `DATABASE_URL`
+- Redis-compatible `RATE_LIMIT_STORAGE_URI`
+- Strong `SECRET_KEY`
+- Real AI provider credentials
+- CORS origins production yang eksplisit
+- Midtrans live credentials dan live endpoints
+- Nilai Pro/Max yang nyata, bukan `0`
+- `TERMINAL_SANDBOX_URL` dan `TERMINAL_SANDBOX_TOKEN`
+
+Jangan simpan secret deployment di repository.
 
 ## Database Migration
 
@@ -94,7 +126,12 @@ app/
   models/
   schemas/
   services/
+  tools/
   main.py
+
+sandbox-service/
+  app/
+  tests/
 
 alembic/
   versions/
@@ -104,9 +141,6 @@ tests/
   workflows/
 ```
 
-## Catatan
+## Security
 
-- Database file lokal dan secrets tidak boleh di-commit.
-- Production wajib menggunakan secret dan shared rate-limit storage yang sesuai.
-- Migration dijalankan melalui Alembic, bukan `create_all()` saat startup.
-- Deployment platform belum dikunci. Railway adalah kandidat yang cocok untuk backend FastAPI + PostgreSQL + Redis.
+Baseline audit dan pekerjaan yang tersisa dicatat di `docs/hardening-plan.md`.
