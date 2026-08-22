@@ -4,6 +4,7 @@ import re
 from typing import Iterable
 
 from app.tools.base import ToolDefinition
+from app.tools.policy import policy
 
 
 _PLATFORM_KEYWORDS = {
@@ -31,12 +32,11 @@ def select_tools(
     plan: str,
     max_tools: int = 12,
 ) -> list[ToolDefinition]:
-    """Select only tools that are relevant to the current user request."""
+    """Select only policy-visible tools that are relevant to the current request."""
     if max_tools < 1:
         return []
 
-    normalized_plan = plan.lower()
-    available = [tool for tool in tools if tool.allows_plan(normalized_plan)]
+    available = policy.visible_tools(tools, plan=plan.lower())
     normalized = user_text.lower()
     tokens = _tokens(user_text)
     scored: list[tuple[int, int, ToolDefinition]] = []
@@ -58,8 +58,5 @@ def select_tools(
         if score > 0:
             scored.append((score, -index, tool))
 
-    # Do not expose the entire registry for an unrelated request. In particular,
-    # this prevents write-capable tools from being offered to the model merely
-    # because the user said something that did not match any tool.
     scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return [tool for _, _, tool in scored[:max_tools]]
