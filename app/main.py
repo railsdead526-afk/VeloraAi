@@ -30,7 +30,7 @@ if settings.cors_origins:
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    request_id = request.headers.get("X-Request-ID") or set_request_id()
+    request_id = set_request_id(request.headers.get("X-Request-ID"))
     logger.exception(
         "Unhandled application error: %s %s request_id=%s",
         request.method,
@@ -67,6 +67,8 @@ async def security_headers(request: Request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if settings.is_production:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
