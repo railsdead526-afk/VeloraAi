@@ -134,7 +134,8 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [ ] Organisation and team model for B2B sales.
 - [x] Extend mypy across the whole model layer, `app/crud`, and the
       billing/quota/audit/export services — 52 files, no blanket ignores.
-- [ ] Extend mypy to `app/api/`, `app/services/ai_*`, and the tool providers.
+- [x] mypy now covers the entire application: 94 files, no exclusions, no
+      blanket ignores.
 - [ ] Raise the coverage floor; `app/tools/*` provider modules remain thin.
 
 ## Release rule

@@ -135,7 +135,7 @@ def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     user = get_user_by_email(db, user_in.email)
-    password_ok = bool(user) and verify_password(user_in.password, user.hashed_password)
+    password_ok = user is not None and verify_password(user_in.password, user.hashed_password)
 
     if not user or not password_ok or not user.is_active or user.is_deleted:
         record_login_attempt(db, email=user_in.email, ip=ip, successful=False)
@@ -216,10 +216,10 @@ def logout(
 
     if payload.all_sessions:
         revoked = revoke_all_sessions(db, user_id=current_user.id)
+    elif payload.refresh_token:
+        revoked = int(revoke_refresh_token(db, token=payload.refresh_token))
     else:
-        revoked = int(
-            bool(payload.refresh_token) and revoke_refresh_token(db, token=payload.refresh_token)
-        )
+        revoked = 0
 
     record_audit_event_best_effort(
         user_id=current_user.id,

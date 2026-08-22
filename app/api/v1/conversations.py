@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -266,7 +267,7 @@ def stream_message(
         query=payload.content,
         use_rag=payload.use_rag,
     )
-    usage = {}
+    usage: dict[str, Any] = {}
     user_id = current_user.id
 
     async def event_stream():
@@ -298,11 +299,20 @@ def stream_message(
             assistant_reply = "".join(chunks).strip()
             if not assistant_reply:
                 raise RuntimeError("AI provider returned an empty response")
-            input_tokens = usage.get("input_tokens")
-            output_tokens = usage.get("output_tokens")
-            model = usage.get("model")
-            if input_tokens is None or output_tokens is None or not model:
+            raw_input_tokens = usage.get("input_tokens")
+            raw_output_tokens = usage.get("output_tokens")
+            raw_model = usage.get("model")
+            if raw_input_tokens is None or raw_output_tokens is None or not raw_model:
                 raise RuntimeError("AI provider did not return token usage")
+            # The usage dict is filled from provider responses, so coerce rather
+            # than trust: a provider returning a string token count would
+            # otherwise be written straight into the billing tables.
+            try:
+                input_tokens = int(raw_input_tokens)
+                output_tokens = int(raw_output_tokens)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError("AI provider returned a non-numeric token count") from exc
+            model = str(raw_model)
 
             assistant_message = create_message(
                 db,

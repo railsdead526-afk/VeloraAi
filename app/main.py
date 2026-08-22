@@ -1,7 +1,8 @@
 import logging
 import time
+from typing import cast
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -34,7 +35,19 @@ app = FastAPI(
     openapi_url=None if settings.is_production else "/openapi.json",
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    """Adapter for a signature mismatch between slowapi and Starlette.
+
+    slowapi types its handler against `RateLimitExceeded`; Starlette's registry
+    is typed against `Exception`. Starlette only dispatches here for the class
+    it was registered with, so the narrowing is sound.
+    """
+    return _rate_limit_exceeded_handler(request, cast(RateLimitExceeded, exc))
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 if settings.trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)

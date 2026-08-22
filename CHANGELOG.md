@@ -21,11 +21,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Migrated every remaining model to SQLAlchemy 2.0 `Mapped[...]` and widened
-  mypy from 32 to 52 files: the whole model layer, `app/crud`, and the
-  billing, quota, audit, and export services. Still no blanket ignores.
+  mypy to the **entire application**: 94 files, no excluded modules, no blanket
+  ignores. The per-module override that loosened checking for models and tools
+  is gone.
 
 ### Fixed
 
+- Token counts reported by the AI provider were passed straight into
+  `record_ai_usage`, which types them as integers. A provider returning
+  `"1024"` as a string would have landed in the billing tables unchallenged.
+  They are coerced now, and a non-numeric count raises. Found by mypy.
+- `ai_tool_stream` reused a single variable for both the model result and a
+  tool result, conflating the two types inside the streaming loop.
 - Subscription reminder and downgrade emails linked to `/billing`, which was
   never a route — every renewal reminder would have landed on a 404. They now
   deep-link to `/?panel=billing`, which opens the billing tab on first paint.

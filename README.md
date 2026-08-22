@@ -207,7 +207,7 @@ Payments
 ```bash
 pytest -q --cov=app --cov-fail-under=72
 ruff check app tests scripts && ruff format --check app tests scripts
-mypy
+mypy                      # entire application, no exclusions
 pip-audit -r requirements.txt --strict
 ```
 

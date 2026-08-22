@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -81,7 +82,9 @@ def stream_native_message(
 
     async def event_stream():
         chunks: list[str] = []
-        usage = {"input_tokens": None, "output_tokens": None, "model": None}
+        # Populated from provider "done" events, so the value types are only
+        # known at runtime.
+        usage: dict[str, Any] = {"input_tokens": None, "output_tokens": None, "model": None}
         confirmation_required = False
         credential_binding = None
         try:

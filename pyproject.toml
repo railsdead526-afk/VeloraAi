@@ -45,29 +45,9 @@ warn_redundant_casts = true
 warn_unused_ignores = false
 exclude = "(alembic/|tests/|web/)"
 
-# Every model is now SQLAlchemy 2.0 `Mapped[...]`, so the whole model layer is
-# checked. Services, CRUD, and API modules are added as they are annotated;
-# see docs/adr/0002-typing.md for the ratchet.
-files = [
-    "app/core",
-    "app/models",
-    "app/schemas",
-    "app/crud",
-    "app/services/auth_tokens.py",
-    "app/services/credential_service.py",
-    "app/services/data_export.py",
-    "app/services/notification_service.py",
-    "app/services/subscription_lifecycle.py",
-    "app/services/quota_service.py",
-    "app/services/billing_service.py",
-    "app/services/audit_service.py",
-    "app/tools/credentials.py",
-    "app/tools/errors.py",
-    "app/tools/base.py",
-    "app/tools/policy.py",
-    "app/tools/registry.py",
-    "scripts",
-]
+# The entire application is type checked. There are no blanket ignores and no
+# excluded modules: `mypy` with no arguments covers everything that ships.
+files = ["app", "scripts"]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

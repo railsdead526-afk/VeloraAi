@@ -48,6 +48,28 @@ annotations resolved to the *method* rather than the type. Every reader,
 including the previous author, had been misreading those signatures. mypy
 caught it the moment the module entered scope.
 
-Still outside the checked set: `app/api/`, `app/services/ai_*`, and the tool
-provider modules. They are added as they are annotated; the `files` list only
-ever grows.
+## Update 2, 2026-08-22
+
+Scope is now the **entire application**: `files = ["app", "scripts"]`, 94
+source files, zero blanket ignores, and the per-module override that had
+loosened checking for models and tools has been deleted. `mypy` with no
+arguments covers everything that ships.
+
+Clearing the last 14 errors was worthwhile rather than cosmetic. Two were
+latent correctness problems:
+
+- `app/api/v1/conversations.py` passed provider-reported token counts straight
+  into `record_ai_usage`, which types them as `int`. A provider returning
+  `"1024"` as a string would have been written into the billing tables
+  unchallenged. The values are now coerced, and a non-numeric count raises.
+- `app/services/ai_tool_stream.py` reused one variable for both the model
+  result and a tool result, so the two types were silently conflated in a
+  function that streams to users.
+
+The rest were narrowing the checker could not see (`bool(user) and ...` instead
+of `user is not None and ...`), a `Result` vs `CursorResult` distinction, and a
+signature mismatch between slowapi and Starlette that is now handled by a small
+typed adapter rather than an ignore comment.
+
+The rule going forward: no new module is exempt. If mypy complains, either the
+annotation or the code is wrong.

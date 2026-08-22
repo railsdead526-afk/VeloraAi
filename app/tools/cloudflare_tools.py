@@ -59,7 +59,7 @@ def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
     record = str(arguments.get("record_id", "")).strip()
     if not record:
         raise ToolProviderError("record_id is required")
-    payload = {
+    payload: dict[str, Any] = {
         key: arguments[key]
         for key in ("type", "name", "content", "ttl", "proxied")
         if key in arguments

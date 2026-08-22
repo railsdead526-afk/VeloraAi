@@ -252,7 +252,9 @@ async def stream_ai_reply_with_tools(
                 yield AgentStreamEvent(type="tool_start", name=name, tool_call_id=tool_call_id)
 
                 if name not in selected_names:
-                    result = {"error": "Tool is not available in the current tool context"}
+                    tool_result: Any = {
+                        "error": "Tool is not available in the current tool context"
+                    }
                 else:
                     tool = registry.get(name)
                     try:
@@ -285,9 +287,9 @@ async def stream_ai_reply_with_tools(
                                 tool_call_id=tool_call_id,
                                 confirmation_token=confirmation_token,
                             )
-                            result = {"error": "Tool execution requires user confirmation"}
+                            tool_result = {"error": "Tool execution requires user confirmation"}
                         else:
-                            result = await execute_tool(
+                            tool_result = await execute_tool(
                                 registry,
                                 name=name,
                                 arguments=arguments,
@@ -298,9 +300,9 @@ async def stream_ai_reply_with_tools(
                     except asyncio.CancelledError:
                         raise
                     except (ToolExecutionError, ValueError, json.JSONDecodeError) as exc:
-                        result = {"error": str(exc)}
+                        tool_result = {"error": str(exc)}
 
-                api_messages.append(_tool_message(tool_call_id, result))
+                api_messages.append(_tool_message(tool_call_id, tool_result))
                 yield AgentStreamEvent(type="tool_end", name=name, tool_call_id=tool_call_id)
 
             if confirmation_required:
