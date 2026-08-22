@@ -1,4 +1,7 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -7,20 +10,20 @@ from app.core.database import Base
 class EmbeddingUsage(Base):
     __tablename__ = "embedding_usage"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    document_id = Column(
+    document_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    provider = Column(String, nullable=False)
-    model = Column(String, nullable=False)
-    input_tokens = Column(Integer, nullable=False, default=0)
-    item_count = Column(Integer, nullable=False, default=0)
-    duration_ms = Column(Integer, nullable=False, default=0)
-    status = Column(String(20), nullable=False, default="success")
-    error_type = Column(String(100), nullable=True)
-    created_at = Column(
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
+    error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

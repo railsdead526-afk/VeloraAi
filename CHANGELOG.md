@@ -8,6 +8,24 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Documents panel in the web client, making the retrieval feature reachable for
+  the first time: file upload, pasted text, indexing status, retry, and delete.
+  Status polling stops once nothing is mid-index rather than running forever.
+
+### Changed
+
+- Migrated every remaining model to SQLAlchemy 2.0 `Mapped[...]` and widened
+  mypy from 32 to 52 files: the whole model layer, `app/crud`, and the
+  billing, quota, audit, and export services. Still no blanket ignores.
+
+### Fixed
+
+- `ToolRegistry.list()` shadows the builtin `list`, so its own
+  `-> list[ToolDefinition]` annotations resolved to the method rather than the
+  type. Found by mypy the moment the module entered scope.
+
+### Added (continued)
+
 - **Data portability export** (`GET /api/v1/auth/me/export`), satisfying the
   UU PDP right to portability. Returns account, conversations, messages,
   documents, subscriptions, payments, usage, and audit history as a downloadable

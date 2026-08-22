@@ -374,6 +374,80 @@ export async function disconnectIntegration(provider: IntegrationProvider): Prom
 }
 
 // --------------------------------------------------------------------------
+// Documents (RAG)
+// --------------------------------------------------------------------------
+
+export interface Document {
+  id: number
+  name: string
+  source: string
+  mime_type: string | null
+  status: string
+  indexing_attempts: number
+  last_index_error: string | null
+  last_indexed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EmbeddingUsage {
+  total_tokens?: number
+  total_requests?: number
+  [key: string]: unknown
+}
+
+export async function listDocuments(): Promise<Document[]> {
+  return apiFetch<Document[]>('/api/v1/rag/documents')
+}
+
+export async function createTextDocument(name: string, content: string): Promise<Document> {
+  return apiFetch<Document>('/api/v1/rag/documents', {
+    method: 'POST',
+    body: JSON.stringify({ name, content, source: 'text', mime_type: 'text/plain' }),
+  })
+}
+
+/** Multipart upload. Content-Type must be left to the browser for the boundary. */
+export async function uploadDocument(file: File): Promise<Document> {
+  await ensureFreshToken()
+  const token = getToken()
+  const form = new FormData()
+  form.append('file', file)
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/rag/documents/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+
+  if (!response.ok) {
+    let message = `Upload failed with status ${response.status}`
+    if (response.status === 413) message = 'That file is larger than the upload limit.'
+    if (response.status === 409) message = 'That document has already been uploaded.'
+    try {
+      const data = await response.json()
+      if (typeof data?.detail === 'string') message = data.detail
+    } catch {
+      // Keep the status-derived message.
+    }
+    throw new Error(message)
+  }
+  return response.json() as Promise<Document>
+}
+
+export async function reindexDocument(documentId: number): Promise<Document> {
+  return apiFetch<Document>(`/api/v1/rag/documents/${documentId}/reindex`, { method: 'POST' })
+}
+
+export async function deleteDocument(documentId: number): Promise<void> {
+  await apiFetch<void>(`/api/v1/rag/documents/${documentId}`, { method: 'DELETE' })
+}
+
+export async function getEmbeddingUsage(): Promise<EmbeddingUsage> {
+  return apiFetch<EmbeddingUsage>('/api/v1/rag/usage')
+}
+
+// --------------------------------------------------------------------------
 // Billing
 // --------------------------------------------------------------------------
 

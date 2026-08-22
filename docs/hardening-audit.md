@@ -102,8 +102,10 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [x] Account panel: password change, session list, sign-out everywhere,
       resend verification, data export, account closure.
 - [x] Billing panel wired to Midtrans Snap.
-- [ ] Remaining user-facing pages: document management and the
-      email-verification / password-reset landing routes.
+- [x] Document management panel: upload, paste, retry indexing, delete, with
+      live status polling that stops when nothing is in flight.
+- [ ] Remaining user-facing pages: email-verification and password-reset
+      landing routes.
 - [ ] Provision production credentials through the platform secret store and
       run an end-to-end AI provider smoke test.
 - [ ] Configure production Midtrans and set real Pro/Max prices.
@@ -130,7 +132,9 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [ ] OAuth flows per provider, so VeloraAi never handles a pasted long-lived
       personal access token.
 - [ ] Organisation and team model for B2B sales.
-- [ ] Extend mypy to the remaining legacy models (`docs/adr/0002-typing.md`).
+- [x] Extend mypy across the whole model layer, `app/crud`, and the
+      billing/quota/audit/export services — 52 files, no blanket ignores.
+- [ ] Extend mypy to `app/api/`, `app/services/ai_*`, and the tool providers.
 - [ ] Raise the coverage floor; `app/tools/*` provider modules remain thin.
 
 ## Release rule

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
 
 import AccountPanel from './AccountPanel'
+import DocumentsPanel from './DocumentsPanel'
 import IntegrationsPanel from './IntegrationsPanel'
 import {
   MIN_PASSWORD_LENGTH,
@@ -60,6 +61,7 @@ export default function Chat() {
   const [toolActivity, setToolActivity] = useState('')
   const [showIntegrations, setShowIntegrations] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
+  const [showDocuments, setShowDocuments] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -433,6 +435,7 @@ export default function Chat() {
   return (
     <main style={styles.app}>
       {showIntegrations && <IntegrationsPanel onClose={() => setShowIntegrations(false)} />}
+      {showDocuments && <DocumentsPanel onClose={() => setShowDocuments(false)} />}
       {showAccount && user && (
         <AccountPanel
           user={user}
@@ -456,6 +459,7 @@ export default function Chat() {
             </button>
           ))}
         </div>
+        <button onClick={() => setShowDocuments(true)} style={styles.link}>Documents</button>
         <button onClick={() => setShowAccount(true)} style={styles.link}>Account</button>
         <button onClick={() => setShowIntegrations(true)} style={styles.link}>Integrations</button>
         <button onClick={() => void handleLogout()} style={styles.link}>Sign out</button>

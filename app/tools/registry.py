@@ -5,6 +5,11 @@ from typing import Any
 
 from app.tools.base import ToolDefinition
 
+# `ToolRegistry.list` shadows the builtin inside the class body, so annotations
+# written as `list[...]` there would resolve to the method rather than the type.
+# Aliasing keeps the public method name while letting the annotations be correct.
+_List = list
+
 
 class ToolRegistry:
     def __init__(self) -> None:
@@ -34,11 +39,11 @@ class ToolRegistry:
         except KeyError as exc:
             raise KeyError(f"Unknown tool: {name}") from exc
 
-    def list(self) -> list[ToolDefinition]:
-        return list(self._tools.values())
+    def list(self) -> _List[ToolDefinition]:
+        return _List(self._tools.values())
 
     @staticmethod
-    def schemas_for(tools: Iterable[ToolDefinition]) -> list[dict[str, Any]]:
+    def schemas_for(tools: Iterable[ToolDefinition]) -> _List[dict[str, Any]]:
         return [
             {
                 "type": "function",
@@ -51,7 +56,7 @@ class ToolRegistry:
             for tool in tools
         ]
 
-    def schemas(self) -> list[dict[str, Any]]:
+    def schemas(self) -> _List[dict[str, Any]]:
         return self.schemas_for(self._tools.values())
 
 

@@ -249,7 +249,7 @@ Still open before taking public money — none of these are code problems:
 - legal entity, ToS and Privacy Policy in Bahasa Indonesia, PPN handling
   ([`docs/legal/compliance-checklist.md`](docs/legal/compliance-checklist.md))
 - SMTP credentials for a real mailbox (the transport itself is built in)
-- remaining user-facing pages: document management, verification landing routes
+- remaining user-facing pages: verification and password-reset landing routes
 - recurring card-on-file billing
 - external penetration test and a completed restore drill
 

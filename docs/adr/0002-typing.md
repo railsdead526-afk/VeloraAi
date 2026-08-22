@@ -34,8 +34,20 @@ The checked surface is genuinely clean, with no blanket ignores. The unchecked
 surface is explicit and visible in one place, so the gap cannot be mistaken for
 coverage.
 
-Widening the scope requires migrating the remaining legacy models
-(`conversation`, `message`, `ai_usage`, `ai_request_reservation`, `audit_log`,
-`document`, `embedding_usage`, `tool_confirmation`) to `Mapped[...]`. That work
-is mechanical and should be done a module at a time, each time adding the module
-to the `files` list so coverage only ratchets upward.
+## Update, 2026-08-22
+
+The remaining legacy models (`conversation`, `message`, `ai_usage`,
+`ai_request_reservation`, `audit_log`, `document`, `embedding_usage`,
+`tool_confirmation`) have been migrated, so **the entire model layer is now
+type checked**, along with `app/crud`, the billing/quota/audit/export services,
+and the tool registry. Scope went from 32 to 52 files.
+
+The migration paid for itself immediately. `ToolRegistry.list()` shadows the
+builtin `list` inside the class body, so its own `-> list[ToolDefinition]`
+annotations resolved to the *method* rather than the type. Every reader,
+including the previous author, had been misreading those signatures. mypy
+caught it the moment the module entered scope.
+
+Still outside the checked set: `app/api/`, `app/services/ai_*`, and the tool
+provider modules. They are added as they are annotated; the `files` list only
+ever grows.
