@@ -43,7 +43,7 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q app tests
       - name: Run SQLite tests with coverage
-        run: pytest -q --cov=app --cov-report=term-missing
+        run: pytest -q tests --cov=app --cov-report=term-missing
 
   postgres-migrations:
     runs-on: ubuntu-latest
@@ -108,9 +108,9 @@ jobs:
       - name: Install sandbox dependencies
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
       - name: Compile sandbox service
-        run: python -m compileall -q .
+        run: python -m compileall -q sandbox_app.py tests
       - name: Run sandbox service tests
-        run: pytest -q
+        run: python -m pytest -q
 
   frontend:
     runs-on: ubuntu-latest
