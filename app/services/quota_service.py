@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -8,7 +8,6 @@ from app.models.ai_request_reservation import AIRequestReservation
 from app.models.ai_usage import AIUsage
 from app.models.user import User
 
-
 RESERVATION_TTL = timedelta(minutes=10)
 
 
@@ -17,17 +16,17 @@ class QuotaExceededError(Exception):
 
 
 def _month_start() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
 def _day_start() -> datetime:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def tokens_used_since(db: Session, user_id: int, since: datetime) -> int:
@@ -184,7 +183,11 @@ def reserve_plan_request_quota(db: Session, *, user_id: int, policy: PlanPolicy)
 
 def complete_request_reservation(db: Session, reservation_id: int) -> None:
     now = _now()
-    reservation = db.query(AIRequestReservation).filter(AIRequestReservation.id == reservation_id).one_or_none()
+    reservation = (
+        db.query(AIRequestReservation)
+        .filter(AIRequestReservation.id == reservation_id)
+        .one_or_none()
+    )
     if reservation is None or reservation.status != "reserved":
         raise RuntimeError("AI request reservation is not active")
     reservation.status = "completed"
@@ -193,7 +196,11 @@ def complete_request_reservation(db: Session, reservation_id: int) -> None:
 
 def release_request_reservation(db: Session, reservation_id: int) -> None:
     now = _now()
-    reservation = db.query(AIRequestReservation).filter(AIRequestReservation.id == reservation_id).one_or_none()
+    reservation = (
+        db.query(AIRequestReservation)
+        .filter(AIRequestReservation.id == reservation_id)
+        .one_or_none()
+    )
     if reservation is None or reservation.status != "reserved":
         return
     reservation.status = "released"

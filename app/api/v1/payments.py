@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -11,7 +11,11 @@ from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models.billing import Payment
 from app.schemas.payment import PaymentCreateRequest, PaymentCreateResponse
-from app.services.billing_service import apply_payment_notification, create_payment_intent, sync_user_role
+from app.services.billing_service import (
+    apply_payment_notification,
+    create_payment_intent,
+    sync_user_role,
+)
 from app.services.midtrans_service import MidtransError, MidtransService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -21,7 +25,9 @@ CHECKOUT_FILE = Path(__file__).resolve().parents[2] / "static" / "checkout.html"
 def _plan_amount(plan: str) -> int:
     amount = settings.pro_price_idr if plan == "pro" else settings.max_price_idr
     if amount <= 0:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Plan pricing is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Plan pricing is not configured"
+        )
     return amount
 
 
@@ -33,7 +39,10 @@ def checkout_page():
 @router.get("/config")
 def payment_config(current_user=Depends(get_current_user)):
     if not settings.midtrans_client_key:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment client is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payment client is not configured",
+        )
     return {
         "provider": "midtrans",
         "is_production": settings.midtrans_is_production,
@@ -46,10 +55,19 @@ def payment_config(current_user=Depends(get_current_user)):
 def snap_script():
     client_key = settings.midtrans_client_key
     if not client_key:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment client is not configured")
-    origin = "https://app.midtrans.com" if settings.midtrans_is_production else "https://app.sandbox.midtrans.com"
-    body = f"document.write('<script src=\\\"{origin}/snap/snap.js\\\" data-client-key=\\\"{client_key}\\\"><\\/script>');"
-    return Response(content=body, media_type="application/javascript", headers={"Cache-Control": "no-store"})
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payment client is not configured",
+        )
+    origin = (
+        "https://app.midtrans.com"
+        if settings.midtrans_is_production
+        else "https://app.sandbox.midtrans.com"
+    )
+    body = f'document.write(\'<script src=\\"{origin}/snap/snap.js\\" data-client-key=\\"{client_key}\\"><\\/script>\');'
+    return Response(
+        content=body, media_type="application/javascript", headers={"Cache-Control": "no-store"}
+    )
 
 
 @router.post("/create", response_model=PaymentCreateResponse)
@@ -94,13 +112,21 @@ def payment_notification(payload: dict, db: Session = Depends(get_db)):
     gross_amount = str(payload.get("gross_amount", "")).strip()
     signature_key = str(payload.get("signature_key", "")).strip()
     if not order_id or not status_code or not gross_amount or not signature_key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid notification payload")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid notification payload"
+        )
 
-    payment = db.query(Payment).filter(Payment.provider == "midtrans", Payment.provider_order_id == order_id).first()
+    payment = (
+        db.query(Payment)
+        .filter(Payment.provider == "midtrans", Payment.provider_order_id == order_id)
+        .first()
+    )
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     if str(payment.amount) != gross_amount:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment amount mismatch")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Payment amount mismatch"
+        )
 
     try:
         midtrans = MidtransService()
@@ -110,13 +136,20 @@ def payment_notification(payload: dict, db: Session = Depends(get_db)):
             gross_amount=gross_amount,
             signature_key=signature_key,
         ):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid payment signature")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid payment signature"
+            )
         verified = midtrans.get_transaction_status(order_id)
     except MidtransError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    if str(verified.get("order_id", "")) != order_id or str(verified.get("gross_amount", "")) != gross_amount:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verified payment mismatch")
+    if (
+        str(verified.get("order_id", "")) != order_id
+        or str(verified.get("gross_amount", "")) != gross_amount
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Verified payment mismatch"
+        )
 
     updated = apply_payment_notification(
         db,
@@ -143,28 +176,44 @@ def refund_payment(
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     if payment.provider != "midtrans":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment provider")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment provider"
+        )
     if payment.status != "settlement":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only settled payments can be refunded")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Only settled payments can be refunded"
+        )
     if payment.refund_status in {"settlement", "200"}:
-        return {"status": "already_refunded", "payment_id": payment.id, "refund_amount": payment.refund_amount}
+        return {
+            "status": "already_refunded",
+            "payment_id": payment.id,
+            "refund_amount": payment.refund_amount,
+        }
 
     refund_amount = payment.amount - payment.refund_amount
     if refund_amount <= 0:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded"
+        )
     try:
-        result = MidtransService().refund_transaction(payment.provider_order_id, refund_amount, "VeloraAi admin refund")
+        result = MidtransService().refund_transaction(
+            payment.provider_order_id, refund_amount, "VeloraAi admin refund"
+        )
     except MidtransError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    payment.refund_amount = refund_amount
+    payment.refund_amount = payment.refund_amount + refund_amount
     payment.refund_status = str(result.get("status_code", result.get("status", "pending")))
     payment.refund_transaction_id = result.get("refund_key") or result.get("transaction_id")
     if payment.refund_status in {"settlement", "200"}:
-        payment.refunded_at = payment.refunded_at or datetime.now(timezone.utc)
+        payment.refunded_at = payment.refunded_at or datetime.now(UTC)
         payment.status = "refunded"
         if payment.subscription is not None:
             payment.subscription.status = "canceled"
         sync_user_role(db, user_id=payment.user_id)
     db.commit()
-    return {"status": payment.refund_status, "payment_id": payment.id, "refund_amount": refund_amount}
+    return {
+        "status": payment.refund_status,
+        "payment_id": payment.id,
+        "refund_amount": refund_amount,
+    }

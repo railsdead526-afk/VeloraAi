@@ -25,6 +25,7 @@ def test_audit_event_stores_metadata_without_sensitive_prompt_data(db, user):
 
 def test_audit_service_contract_has_no_prompt_or_arguments_fields():
     import inspect
+
     from app.services.audit_service import record_audit_event_best_effort
 
     signature = inspect.signature(record_audit_event_best_effort)

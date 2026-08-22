@@ -2,8 +2,8 @@ import pytest
 
 from app.tools.base import ToolDefinition, ToolRisk
 from app.tools.executor import ToolExecutionError, execute_tool
-from app.tools.registry import ToolRegistry
 from app.tools.policy import policy
+from app.tools.registry import ToolRegistry
 
 
 def _tool(risk: ToolRisk, *, confirmation: bool = False) -> ToolDefinition:

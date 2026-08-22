@@ -10,9 +10,7 @@ def test_mock_streaming_returns_complete_reply():
     async def collect():
         return [
             chunk
-            async for chunk in stream_ai_reply_from_history(
-                [{"role": "user", "content": "halo"}]
-            )
+            async for chunk in stream_ai_reply_from_history([{"role": "user", "content": "halo"}])
         ]
 
     old_provider = settings.ai_provider
@@ -27,9 +25,7 @@ def test_mock_streaming_returns_complete_reply():
 
 def test_streaming_rejects_unknown_provider():
     async def consume():
-        async for _ in stream_ai_reply_from_history(
-            [{"role": "user", "content": "halo"}]
-        ):
+        async for _ in stream_ai_reply_from_history([{"role": "user", "content": "halo"}]):
             pass
 
     old_provider = settings.ai_provider

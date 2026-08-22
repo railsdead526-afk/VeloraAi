@@ -5,7 +5,13 @@ import pytest
 from app.models.document import Document
 from app.models.user import User
 from app.services.rag_jobs import process_document_index
-from app.services.rag_service import DuplicateDocumentError, RAGError, delete_document, ingest_text, reindex_document
+from app.services.rag_service import (
+    DuplicateDocumentError,
+    RAGError,
+    delete_document,
+    ingest_text,
+    reindex_document,
+)
 
 
 @pytest.fixture
@@ -42,8 +48,10 @@ def test_reindex_queues_and_job_rebuilds_chunks(db, users):
             }
         return vectors
 
-    with patch("app.services.rag_service.embed_texts", side_effect=mock_embed), \
-         patch("app.services.rag_jobs.embed_texts", side_effect=mock_embed):
+    with (
+        patch("app.services.rag_service.embed_texts", side_effect=mock_embed),
+        patch("app.services.rag_jobs.embed_texts", side_effect=mock_embed),
+    ):
         document = ingest_text(db, user_id=owner.id, name="one", text="first content")
         document.raw_text = "changed content"
         db.commit()

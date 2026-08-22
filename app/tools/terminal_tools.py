@@ -80,13 +80,33 @@ def terminal_git_commit(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def terminal_run_tests(arguments: dict[str, Any]) -> dict[str, Any]:
     command = str(arguments.get("command", "pytest -q")).strip()
-    command = validate_fixed_command(command, allowed_prefixes=(("pytest",), ("python", "-m", "pytest"), ("python3", "-m", "pytest"), ("npm", "test"), ("pnpm", "test"), ("yarn", "test")))
+    command = validate_fixed_command(
+        command,
+        allowed_prefixes=(
+            ("pytest",),
+            ("python", "-m", "pytest"),
+            ("python3", "-m", "pytest"),
+            ("npm", "test"),
+            ("pnpm", "test"),
+            ("yarn", "test"),
+        ),
+    )
     return _run(command, arguments, 60)
 
 
 def terminal_run_lint(arguments: dict[str, Any]) -> dict[str, Any]:
     command = str(arguments.get("command", "ruff check .")).strip()
-    command = validate_fixed_command(command, allowed_prefixes=(("ruff",), ("python", "-m", "ruff"), ("python3", "-m", "ruff"), ("npm", "run", "lint"), ("pnpm", "run", "lint"), ("yarn", "lint")))
+    command = validate_fixed_command(
+        command,
+        allowed_prefixes=(
+            ("ruff",),
+            ("python", "-m", "ruff"),
+            ("python3", "-m", "ruff"),
+            ("npm", "run", "lint"),
+            ("pnpm", "run", "lint"),
+            ("yarn", "lint"),
+        ),
+    )
     return _run(command, arguments, 60)
 
 
@@ -94,14 +114,28 @@ def terminal_run_build(arguments: dict[str, Any]) -> dict[str, Any]:
     command = str(arguments.get("command", "")).strip()
     if not command:
         raise TerminalSafetyError("build command is required")
-    command = validate_fixed_command(command, allowed_prefixes=(("npm", "run", "build"), ("pnpm", "run", "build"), ("yarn", "build"), ("python", "-m", "build"), ("python3", "-m", "build")))
+    command = validate_fixed_command(
+        command,
+        allowed_prefixes=(
+            ("npm", "run", "build"),
+            ("pnpm", "run", "build"),
+            ("yarn", "build"),
+            ("python", "-m", "build"),
+            ("python3", "-m", "build"),
+        ),
+    )
     return _run(command, arguments, 60)
 
 
 def terminal_install_package(arguments: dict[str, Any]) -> dict[str, Any]:
     package = validate_package(str(arguments.get("package", "")))
     manager = str(arguments.get("manager", "")).strip().lower()
-    commands = {"npm": "npm install", "pnpm": "pnpm add", "yarn": "yarn add", "pip": "python -m pip install"}
+    commands = {
+        "npm": "npm install",
+        "pnpm": "pnpm add",
+        "yarn": "yarn add",
+        "pip": "python -m pip install",
+    }
     if manager not in commands:
         raise TerminalSafetyError("unsupported package manager")
     return _run(f"{commands[manager]} {_quote(package)}", arguments, 120)

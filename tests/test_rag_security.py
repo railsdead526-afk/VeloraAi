@@ -4,7 +4,9 @@ from types import SimpleNamespace
 def test_rag_context_is_marked_as_untrusted(monkeypatch, db, user):
     from app.services import agent_context
 
-    monkeypatch.setattr(agent_context, "get_messages_by_conversation", lambda _db, _conversation_id: [])
+    monkeypatch.setattr(
+        agent_context, "get_messages_by_conversation", lambda _db, _conversation_id: []
+    )
     monkeypatch.setattr(
         agent_context,
         "retrieve_chunks",
@@ -79,7 +81,9 @@ def test_foreign_documents_do_not_enable_rag(monkeypatch, db, user):
     )
     db.commit()
 
-    monkeypatch.setattr(agent_context, "get_messages_by_conversation", lambda _db, _conversation_id: [])
+    monkeypatch.setattr(
+        agent_context, "get_messages_by_conversation", lambda _db, _conversation_id: []
+    )
     retrieve_called = False
 
     def _retrieve(*args, **kwargs):

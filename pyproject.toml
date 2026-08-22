@@ -1,0 +1,88 @@
+[project]
+name = "veloraai"
+version = "1.0.0"
+description = "VeloraAi backend API"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions", ".venv", "web"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear
+    "UP",   # pyupgrade
+    "S",    # bandit security
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "RUF",
+]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    "B008",   # FastAPI Depends() in defaults is the documented pattern
+    "S101",   # asserts are fine in tests
+    "SIM105",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B011"]
+"scripts/**" = ["S603", "S607"]
+"app/api/v1/system.py" = ["S110", "B017"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "scripts", "tests"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+exclude = "(alembic/|tests/|web/)"
+
+# Type checking is enforced on the security- and money-critical surfaces first.
+# Widening this list requires migrating the remaining legacy `Column(...)`
+# models to SQLAlchemy 2.0 `Mapped[...]`; tracked in docs/adr/0002-typing.md.
+files = [
+    "app/core",
+    "app/schemas",
+    "app/crud/user.py",
+    "app/models/user.py",
+    "app/models/auth.py",
+    "app/models/integration.py",
+    "app/models/billing.py",
+    "app/services/auth_tokens.py",
+    "app/services/credential_service.py",
+    "app/services/notification_service.py",
+    "app/services/subscription_lifecycle.py",
+    "app/tools/credentials.py",
+    "app/tools/errors.py",
+    "scripts",
+]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "midtrans_e2e: real Midtrans Sandbox tests; skipped unless explicitly enabled",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/static/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

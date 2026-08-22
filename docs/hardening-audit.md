@@ -1,34 +1,121 @@
 # VeloraAi production hardening audit
 
-Status: active engineering baseline. This document records verified repository controls and remaining production gates. It is not a claim that external infrastructure has been secured or audited by a third party.
+Status: active engineering baseline. This document records controls that are
+verified **in this repository** and gates that remain open. It is not a claim
+that external infrastructure has been secured, nor that a third party has
+audited it.
+
+Last updated: 2026-08-22 (release 1.0.0)
 
 ## Verified in repository
 
-- Production configuration rejects SQLite and requires PostgreSQL.
-- Production configuration rejects missing or weak `SECRET_KEY` values and debug mode.
-- Production configuration rejects `memory://` rate limiting.
-- Production configuration rejects wildcard CORS when credentials are enabled.
-- Production configuration requires AI provider credentials when using OpenAI/Llama.
-- Production configuration requires non-zero Pro and Max prices.
+### Tenant isolation
+- Third-party credentials are stored per user, encrypted with AES-256-GCM.
+- `user_id` and `provider` are bound into the ciphertext as associated data, so
+  a ciphertext moved between rows fails authentication rather than decrypting.
+- Tools resolve credentials from a request-scoped context, never from process
+  environment. The unbound case raises instead of falling back.
+- The development environment fallback is refused at boot in production.
+- Every user-owned query (conversations, messages, documents, chunks, vector
+  search, payments, integrations) filters on `user_id`.
+- Regression tests cover cross-user read, cross-user delete, and ciphertext
+  transplantation.
+
+### Authentication
+- Argon2id password hashing; legacy pbkdf2 hashes verify and upgrade on login.
+- Access tokens are short lived and carry a revocable `jti`.
+- Refresh tokens are opaque, stored as SHA-256 digests, and rotate on use.
+- Refresh-token replay revokes the entire session family.
+- Password change and reset revoke all sessions.
+- Per-email lockout on repeated failures, on top of IP rate limiting.
+- Password reset responses are constant regardless of account existence.
+- Verification and reset tokens are single use and expiring.
+- Account deletion is a soft delete that preserves financial and audit records.
+
+### Billing
+- Webhook signatures are verified in constant time, then re-verified against
+  the provider API before any state change.
+- Amounts are matched against the stored payment; the row is locked with
+  `SELECT ... FOR UPDATE`.
+- Terminal statuses make duplicate notifications idempotent.
+- Subscriptions carry a bounded period, a grace window, and an expiry sweep.
+- Entitlement is derived from period state, not from a payment having ever
+  occurred.
+- Renewals extend from the existing period end.
+- Invoice numbers are sequential per month; VAT is recorded per payment.
+
+### Configuration
+- Production refuses: SQLite, `public` schema, weak or missing `SECRET_KEY`,
+  debug mode, `memory://` rate limiting, wildcard or plaintext CORS, missing or
+  wildcard trusted hosts, plaintext frontend URL, mock AI provider, missing
+  provider or Midtrans credentials, zero prices, missing credential encryption
+  keys, shared environment tool credentials, unverified signups, and an
+  unprotected metrics endpoint.
+
+### Execution safety
 - Terminal execution is routed through the versioned `SandboxClient` boundary.
-- Ephemeral terminal workspaces are deleted in a `finally` block.
-- Persistent workspace IDs are not an authorization mechanism and must be bound by orchestration.
-- Sandbox runtime is designed around network isolation, dropped capabilities, no-new-privileges, read-only root, resource limits, bounded output, and isolated workspaces.
-- Tool policy and approval checks are enforced before tool execution.
-- CI currently exercises SQLite tests, PostgreSQL migrations, frontend build/lint, and sandbox-service tests.
+- The sandbox runs each command with network isolation, dropped capabilities,
+  no-new-privileges, a read-only root filesystem, pid/CPU/memory limits,
+  bounded output, and an isolated per-workspace mount.
+- Ephemeral workspaces are removed in a `finally` block.
+- Tool policy and approval checks run before execution.
+- Persistent workspace IDs are not an authorization mechanism.
+
+### Transport and observability
+- HSTS, CSP, COOP, CORP, frame denial, nosniff, and a trusted-host allowlist.
+- API documentation is disabled in production.
+- Structured JSON logging with automatic credential redaction.
+- Request IDs correlate responses, logs, and audit rows.
+- Deep readiness endpoint covering all five runtime dependencies.
+- Prometheus metrics with bounded label cardinality, behind a bearer token.
+- Append-only audit log for security and billing events.
+
+### Supply chain and CI
+- All dependencies pinned; Dependabot across pip, npm, Actions, and Docker.
+- CI enforces: ruff lint and format, mypy on the critical surface, tests with a
+  coverage floor, PostgreSQL migrations **including full reversibility**,
+  `pip-audit` on both requirement sets, bandit rules, gitleaks secret scanning,
+  `npm audit`, frontend typecheck and build, and a Trivy-scanned image build.
+- A single `CI passed` gate aggregates every required job.
+- Zero known vulnerabilities in pinned dependencies at release.
 
 ## Production gates still open
 
-- Set `AI_PROVIDER` to a real provider in production and perform an end-to-end provider smoke test.
-- Provision production OpenAI/Llama credentials through deployment secrets only.
-- Configure production Midtrans credentials and production endpoints only after pricing is finalized.
-- Set real Pro/Max prices and verify server-side plan enforcement against payment state.
-- Provision shared rate-limit storage such as Redis.
-- Deploy and verify the sandbox service on a dedicated host with Docker isolation enforced by runtime configuration.
-- Lock the deployment platform and document the canonical production architecture and rollback procedure.
-- Replace the legacy FastAPI/Pydantic dependency stack through a dedicated compatibility-tested migration.
-- Complete external security review, backup/restore test, monitoring, alerting, and incident-response procedures.
+These are deliberately listed as open. None is satisfied by code alone.
+
+### Blocking public launch
+- [ ] Legal entity, ToS, and Privacy Policy in Bahasa Indonesia; PPN
+      registration and e-Faktur. See `docs/legal/compliance-checklist.md`.
+- [ ] Wire a real email transport into `notification_service.set_email_sender`.
+      Verification and reset links are currently logged, not delivered.
+- [ ] Build the user-facing pages: sign in, sign up, billing, documents,
+      integrations, account settings.
+- [ ] Provision production credentials through the platform secret store and
+      run an end-to-end AI provider smoke test.
+- [ ] Configure production Midtrans and set real Pro/Max prices.
+- [ ] Provision Redis for shared rate limiting.
+- [ ] Deploy the sandbox service on a dedicated host with Docker isolation
+      enforced by runtime configuration.
+- [ ] Schedule `scripts/run_maintenance.py` hourly **and alert on failure**.
+      Without it, subscriptions never expire.
+- [ ] Enable branch protection on `main`: required `CI passed`, required
+      review, no force push.
+- [ ] Make the repository private.
+
+### Blocking scale
+- [ ] External penetration test.
+- [ ] Complete and record a backup restore drill (`docs/runbook.md` §5).
+- [ ] Stand up monitoring, alerting, and on-call rotation against §8 of the
+      runbook.
+- [ ] Recurring card-on-file billing via Midtrans tokenisation.
+- [ ] Data export endpoint for UU PDP portability rights.
+- [ ] OAuth flows per provider, so VeloraAi never handles a pasted long-lived
+      personal access token.
+- [ ] Organisation and team model for B2B sales.
+- [ ] Extend mypy to the remaining legacy models (`docs/adr/0002-typing.md`).
+- [ ] Raise the coverage floor; `app/tools/*` provider modules remain thin.
 
 ## Release rule
 
-A production deployment is not considered ready while any required production gate above remains open.
+A production deployment is not ready while any gate under **Blocking public
+launch** remains open.

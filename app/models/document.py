@@ -1,12 +1,12 @@
 import json
+from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import TypeDecorator
-from pgvector.sqlalchemy import Vector
 
 from app.core.database import Base
-
 
 EMBEDDING_DIMENSIONS = 1536
 
@@ -45,7 +45,9 @@ class Document(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name = Column(String(255), nullable=False)
     source = Column(String(50), nullable=False, default="text")
     mime_type = Column(String(100), nullable=True)
@@ -56,7 +58,9 @@ class Document(Base):
     last_index_error = Column(String(255), nullable=True)
     last_indexed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
     user = relationship("User", back_populates="documents")
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
@@ -66,10 +70,14 @@ class DocumentChunk(Base):
     __tablename__ = "document_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
-    document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_id = Column(
+        Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    embedding = Column(EMBEDDING_TYPE, nullable=True)
+    # EMBEDDING_TYPE is Vector on PostgreSQL and JSON on SQLite, so the
+    # Python-side type is dialect dependent.
+    embedding: "Column[Any]" = Column(EMBEDDING_TYPE, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     document = relationship("Document", back_populates="chunks")

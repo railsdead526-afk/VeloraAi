@@ -6,7 +6,6 @@ from app.models.user import User
 from app.services.billing_service import apply_payment_notification, sync_user_role
 from app.services.rag_jobs import process_document_index
 from app.services.rag_service import RAGError, create_pending_document
-from tests.conftest import TestingSessionLocal
 
 
 def test_create_pending_document_enforces_text_size_and_name(db, monkeypatch):

@@ -88,7 +88,10 @@ def test_embed_texts_returns_usage_metadata(monkeypatch):
                 "usage": {"prompt_tokens": 17},
             }
 
-    monkeypatch.setattr("app.services.rag_service._embedding_config", lambda: ("https://example.test/v1", "key", "test-model"))
+    monkeypatch.setattr(
+        "app.services.rag_service._embedding_config",
+        lambda: ("https://example.test/v1", "key", "test-model"),
+    )
     monkeypatch.setattr("app.services.rag_service.httpx.post", lambda *args, **kwargs: Response())
 
     vectors, metadata = embed_texts(["hello"], return_metadata=True)

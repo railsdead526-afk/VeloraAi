@@ -1,22 +1,45 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 from app.tools.base import ToolDefinition
 from app.tools.policy import policy
 
-
 _PLATFORM_KEYWORDS = {
     "github": {
-        "github", "repo", "repository", "branch", "pull request", "pr", "issue", "commit",
-        "ci", "actions", "workflow", "review", "merge", "comment", "checks",
+        "github",
+        "repo",
+        "repository",
+        "branch",
+        "pull request",
+        "pr",
+        "issue",
+        "commit",
+        "ci",
+        "actions",
+        "workflow",
+        "review",
+        "merge",
+        "comment",
+        "checks",
     },
     "vercel": {"vercel", "deployment", "deploy", "domain"},
     "railway": {"railway", "service", "deployment", "deploy"},
     "cloudflare": {"cloudflare", "dns", "worker", "workers", "r2", "zone"},
     "supabase": {"supabase", "postgres", "database", "sql", "edge function"},
-    "terminal": {"terminal", "shell", "command", "bash", "npm", "pip", "build", "test", "lint", "git"},
+    "terminal": {
+        "terminal",
+        "shell",
+        "command",
+        "bash",
+        "npm",
+        "pip",
+        "build",
+        "test",
+        "lint",
+        "git",
+    },
     "calculator": {"calculate", "calculator", "hitung", "berapa", "math"},
 }
 

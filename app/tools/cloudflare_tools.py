@@ -1,15 +1,12 @@
-import os
 from typing import Any
 from urllib.parse import quote
 
+from app.tools.credentials import resolve_credential
 from app.tools.providers import ToolProviderError, _request
 
 
 def _token() -> str:
-    token = os.getenv("CLOUDFLARE_API_TOKEN", "")
-    if not token:
-        raise ToolProviderError("CLOUDFLARE_API_TOKEN is not configured")
-    return token
+    return resolve_credential("cloudflare")
 
 
 def _zone(arguments: dict[str, Any]) -> str:
@@ -62,7 +59,11 @@ def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
     record = str(arguments.get("record_id", "")).strip()
     if not record:
         raise ToolProviderError("record_id is required")
-    payload = {key: arguments[key] for key in ("type", "name", "content", "ttl", "proxied") if key in arguments}
+    payload = {
+        key: arguments[key]
+        for key in ("type", "name", "content", "ttl", "proxied")
+        if key in arguments
+    }
     if "type" in payload:
         payload["type"] = str(payload["type"]).upper()
     if not payload:

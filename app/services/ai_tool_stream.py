@@ -3,13 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 
 from app.core.config import settings
-from app.services.ai_provider import auth_headers, build_api_messages, get_provider_config, parse_usage
+from app.services.ai_provider import (
+    auth_headers,
+    build_api_messages,
+    get_provider_config,
+    parse_usage,
+)
 from app.services.tool_confirmation import create_confirmation_token, verify_confirmation_token
 from app.tools.executor import ToolExecutionError, execute_tool
 from app.tools.policy import policy
@@ -142,7 +148,10 @@ async def stream_ai_reply_with_tools(
                         headers=auth_headers(config),
                         json=payload,
                     ) as response:
-                        if response.status_code in RETRYABLE_STATUS_CODES and attempt < settings.ai_max_retries:
+                        if (
+                            response.status_code in RETRYABLE_STATUS_CODES
+                            and attempt < settings.ai_max_retries
+                        ):
                             await response.aread()
                             await _backoff(attempt)
                             continue
@@ -178,7 +187,9 @@ async def stream_ai_reply_with_tools(
 
                             for call in delta.get("tool_calls") or []:
                                 index = int(call.get("index", 0))
-                                state = tool_calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                                state = tool_calls.setdefault(
+                                    index, {"id": "", "name": "", "arguments": ""}
+                                )
                                 if call.get("id"):
                                     state["id"] = call["id"]
                                 function = call.get("function") or {}
@@ -192,7 +203,11 @@ async def stream_ai_reply_with_tools(
                     raise
                 except (httpx.HTTPError, ValueError) as exc:
                     last_error = exc
-                    if streamed_content or attempt >= settings.ai_max_retries or not _is_retryable(exc):
+                    if (
+                        streamed_content
+                        or attempt >= settings.ai_max_retries
+                        or not _is_retryable(exc)
+                    ):
                         break
                     await _backoff(attempt)
 
@@ -243,9 +258,7 @@ async def stream_ai_reply_with_tools(
                     try:
                         arguments = _parse_tool_arguments(call["function"]["arguments"])
                         approved = False
-                        if not policy.requires_approval(tool):
-                            approved = True
-                        elif confirmed:
+                        if not policy.requires_approval(tool) or confirmed:
                             approved = True
                         elif user_id is not None and conversation_id is not None:
                             approved = verify_confirmation_token(

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models.embedding_usage import EmbeddingUsage
 from app.services.embedding_usage_service import embedding_usage_summary, record_embedding_usage
@@ -26,7 +26,11 @@ def test_embedding_usage_summary(db, user):
         duration_ms=100,
     )
 
-    summary = embedding_usage_summary(db, user_id=user.id, since=datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+    summary = embedding_usage_summary(
+        db,
+        user_id=user.id,
+        since=datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+    )
 
     assert summary == {"input_tokens": 200, "item_count": 5, "requests": 2}
     assert db.query(EmbeddingUsage).count() == 2

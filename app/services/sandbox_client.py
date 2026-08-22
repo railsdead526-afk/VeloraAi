@@ -22,7 +22,9 @@ class SandboxClient:
 
     def create_workspace(self) -> str:
         try:
-            response = httpx.post(f"{self.base_url}/v1/workspaces", headers=self._headers(), timeout=10)
+            response = httpx.post(
+                f"{self.base_url}/v1/workspaces", headers=self._headers(), timeout=10
+            )
             response.raise_for_status()
             payload = response.json()
             workspace_id = payload.get("workspace_id")

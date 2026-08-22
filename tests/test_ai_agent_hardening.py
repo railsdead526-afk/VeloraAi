@@ -35,7 +35,9 @@ def test_sync_provider_retry_uses_configured_budget(monkeypatch):
                 raise httpx.ConnectError("temporary")
             return FakeResponse()
 
-    result = ai_tool_loop._post_completion_sync(Client(), "https://example.test/chat/completions", headers={}, payload={})
+    result = ai_tool_loop._post_completion_sync(
+        Client(), "https://example.test/chat/completions", headers={}, payload={}
+    )
     assert result["choices"][0]["message"]["content"] == "ok"
     assert attempts["count"] == 3
 
@@ -51,7 +53,9 @@ def test_async_provider_retry_does_not_retry_non_retryable_4xx(monkeypatch):
 
     async def run():
         with pytest.raises(httpx.HTTPStatusError):
-            await ai_tool_loop._post_completion_async(Client(), "https://example.test/chat/completions", headers={}, payload={})
+            await ai_tool_loop._post_completion_async(
+                Client(), "https://example.test/chat/completions", headers={}, payload={}
+            )
 
     asyncio.run(run())
     assert attempts["count"] == 1
@@ -64,7 +68,9 @@ def test_async_provider_cancellation_is_not_swallowed():
 
     async def run():
         with pytest.raises(asyncio.CancelledError):
-            await ai_tool_loop._post_completion_async(Client(), "https://example.test/chat/completions", headers={}, payload={})
+            await ai_tool_loop._post_completion_async(
+                Client(), "https://example.test/chat/completions", headers={}, payload={}
+            )
 
     asyncio.run(run())
 
@@ -88,15 +94,19 @@ def test_async_tool_loop_exhausts_round_budget(monkeypatch):
     )
 
     payload = {
-        "choices": [{
-            "message": {
-                "content": None,
-                "tool_calls": [{
-                    "id": "call-1",
-                    "function": {"name": "echo", "arguments": json.dumps({})},
-                }],
+        "choices": [
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call-1",
+                            "function": {"name": "echo", "arguments": json.dumps({})},
+                        }
+                    ],
+                }
             }
-        }],
+        ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
 

@@ -27,3 +27,7 @@ web/.env.*.local
 
 # Local-only Termux dependency workaround
 requirements-termux.txt
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/

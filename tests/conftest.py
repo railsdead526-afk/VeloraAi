@@ -2,18 +2,18 @@ import os
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from app.main import app
+from app.api.v1 import agent_stream, conversations
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter
+from app.main import app
 from app.models.user import User
-from app.api.v1 import agent_stream, conversations
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
 

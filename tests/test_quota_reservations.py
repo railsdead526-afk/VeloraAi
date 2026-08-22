@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -49,7 +49,7 @@ def test_expired_reservation_does_not_block_quota(db, user):
     assert first is not None
 
     reservation = db.query(AIRequestReservation).filter(AIRequestReservation.id == first).one()
-    reservation.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    reservation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     db.commit()
 
     second = reserve_plan_request_quota(db, user_id=user.id, policy=policy)

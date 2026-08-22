@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 import httpx
 from sqlalchemy import func, or_, select
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.document import Document, DocumentChunk, EMBEDDING_DIMENSIONS
+from app.models.document import EMBEDDING_DIMENSIONS, Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
 
 
@@ -196,8 +196,15 @@ def ingest_text(
     try:
         chunks = chunk_text(document.raw_text)
         embeddings = embed_texts(chunks)
-        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
-            db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
+        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
+            db.add(
+                DocumentChunk(
+                    document_id=document.id,
+                    chunk_index=index,
+                    content=chunk_content,
+                    embedding=embedding,
+                )
+            )
         document.status = "ready"
         db.commit()
         db.refresh(document)
@@ -226,19 +233,27 @@ def delete_document(db: Session, *, user_id: int, document_id: int) -> None:
     db.commit()
 
 
-def _vector_candidates(db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int) -> list[tuple[DocumentChunk, float]]:
+def _vector_candidates(
+    db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int
+) -> list[tuple[DocumentChunk, float]]:
     distance = DocumentChunk.embedding.cosine_distance(query_embedding)
     statement = (
         select(DocumentChunk, distance.label("distance"))
         .join(DocumentChunk.document)
-        .where(Document.user_id == user_id, Document.status == "ready", DocumentChunk.embedding.is_not(None))
+        .where(
+            Document.user_id == user_id,
+            Document.status == "ready",
+            DocumentChunk.embedding.is_not(None),
+        )
         .order_by(distance)
         .limit(candidate_limit)
     )
     return [(chunk, float(distance_value)) for chunk, distance_value in db.execute(statement).all()]
 
 
-def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limit: int) -> list[DocumentChunk]:
+def _keyword_candidates(
+    db: Session, *, user_id: int, query: str, candidate_limit: int
+) -> list[DocumentChunk]:
     terms = [term for term in re.findall(r"[\w.-]+", query.lower()) if len(term) >= 2][:8]
     if not terms:
         return []
@@ -251,7 +266,10 @@ def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limi
     )
     rows = list(db.execute(statement).scalars())
     query_terms = set(terms)
-    rows.sort(key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()), reverse=True)
+    rows.sort(
+        key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()),
+        reverse=True,
+    )
     return rows[:candidate_limit]
 
 
@@ -301,8 +319,12 @@ def hybrid_retrieve_chunks(
             db.rollback()
         raise
 
-    vector_rows = _vector_candidates(db, user_id=user_id, query_embedding=vector, candidate_limit=candidate_limit)
-    keyword_rows = _keyword_candidates(db, user_id=user_id, query=query, candidate_limit=candidate_limit)
+    vector_rows = _vector_candidates(
+        db, user_id=user_id, query_embedding=vector, candidate_limit=candidate_limit
+    )
+    keyword_rows = _keyword_candidates(
+        db, user_id=user_id, query=query, candidate_limit=candidate_limit
+    )
 
     fused: dict[int, float] = {}
     chunks: dict[int, DocumentChunk] = {}
@@ -323,7 +345,9 @@ def hybrid_retrieve_chunks(
     return [(chunks[chunk_id], distances.get(chunk_id, 1.0)) for chunk_id, _score in ranked]
 
 
-def retrieve_chunks(db: Session, *, user_id: int, query: str, limit: int = 5) -> list[tuple[DocumentChunk, float]]:
+def retrieve_chunks(
+    db: Session, *, user_id: int, query: str, limit: int = 5
+) -> list[tuple[DocumentChunk, float]]:
     return hybrid_retrieve_chunks(db, user_id=user_id, query=query, limit=limit)
 
 

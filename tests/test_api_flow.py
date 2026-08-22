@@ -3,7 +3,7 @@ from tests.conftest import client
 
 def test_register_login_and_me_flow():
     email = "flow@example.com"
-    password = "securepass123"
+    password = "Str0ng!Passw0rd"
 
     register = client.post(
         "/api/v1/auth/register",
@@ -40,7 +40,7 @@ def test_conversation_requires_authentication():
 
 def test_create_and_list_conversation():
     email = "conversation-flow@example.com"
-    password = "securepass123"
+    password = "Str0ng!Passw0rd"
 
     client.post(
         "/api/v1/auth/register",
