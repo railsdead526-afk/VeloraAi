@@ -104,8 +104,8 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [x] Billing panel wired to Midtrans Snap.
 - [x] Document management panel: upload, paste, retry indexing, delete, with
       live status polling that stops when nothing is in flight.
-- [ ] Remaining user-facing pages: email-verification and password-reset
-      landing routes.
+- [x] Email-verification and password-reset landing routes, plus a
+      forgot-password entry point on the sign-in form.
 - [ ] Provision production credentials through the platform secret store and
       run an end-to-end AI provider smoke test.
 - [ ] Configure production Midtrans and set real Pro/Max prices.

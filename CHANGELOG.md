@@ -8,6 +8,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `/verify-email` and `/reset-password` routes, and a forgot-password link on
+  the sign-in form. The verification and reset emails had nowhere to land
+  before this: every link 404'd.
+- A test that asserts the paths hardcoded in email templates correspond to
+  routes that actually exist in the Next.js tree, so renaming a route breaks
+  the build instead of silently breaking every link in every inbox.
 - Documents panel in the web client, making the retrieval feature reachable for
   the first time: file upload, pasted text, indexing status, retry, and delete.
   Status polling stops once nothing is mid-index rather than running forever.
@@ -20,6 +26,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Subscription reminder and downgrade emails linked to `/billing`, which was
+  never a route — every renewal reminder would have landed on a 404. They now
+  deep-link to `/?panel=billing`, which opens the billing tab on first paint.
+  Caught by the new route-contract test.
 - `ToolRegistry.list()` shadows the builtin `list`, so its own
   `-> list[ToolDefinition]` annotations resolved to the method rather than the
   type. Found by mypy the moment the module entered scope.

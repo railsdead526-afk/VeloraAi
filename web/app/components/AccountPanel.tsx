@@ -25,12 +25,14 @@ export default function AccountPanel({
   user,
   onClose,
   onSignedOut,
+  initialTab = 'account',
 }: {
   user: User
   onClose: () => void
   onSignedOut: () => void
+  initialTab?: Tab
 }) {
-  const [tab, setTab] = useState<Tab>('account')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [pricing, setPricing] = useState<PaymentConfig | null>(null)
   const [currentPassword, setCurrentPassword] = useState('')

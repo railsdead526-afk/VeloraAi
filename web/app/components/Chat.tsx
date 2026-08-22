@@ -19,6 +19,7 @@ import {
   login,
   logout as apiLogout,
   register,
+  requestPasswordReset,
   subscribeAuthExpired,
   validatePassword,
   type Conversation,
@@ -55,6 +56,7 @@ export default function Chat() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
   const [error, setError] = useState('')
   const [useRag, setUseRag] = useState(true)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
@@ -62,6 +64,13 @@ export default function Chat() {
   const [showIntegrations, setShowIntegrations] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [showDocuments, setShowDocuments] = useState(false)
+  // Subscription emails deep-link here as /?panel=billing. Read during the
+  // initialiser so the correct tab is open on first paint.
+  const [accountTab, setAccountTab] = useState<'account' | 'billing' | 'privacy'>(() => {
+    if (typeof window === 'undefined') return 'account'
+    const panel = new URLSearchParams(window.location.search).get('panel')
+    return panel === 'billing' || panel === 'privacy' ? panel : 'account'
+  })
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -73,6 +82,9 @@ export default function Chat() {
       }
       try {
         setUser(await getCurrentUser())
+        if (new URLSearchParams(window.location.search).has('panel')) {
+          setShowAccount(true)
+        }
         const conversations = await listConversations()
         setChats(conversations)
         if (conversations[0]) setActiveChat(conversations[0].id)
@@ -360,9 +372,27 @@ export default function Chat() {
     }
   }
 
+  const handleForgotPassword = async () => {
+    setAuthError('')
+    setAuthNotice('')
+    if (!email.trim()) {
+      setAuthError('Enter your email address first.')
+      return
+    }
+    try {
+      await requestPasswordReset(email.trim())
+    } catch {
+      // The endpoint always accepts, so a failure here is a network problem.
+    }
+    // Deliberately unconditional: confirming whether an address exists would
+    // turn this into an account-enumeration oracle.
+    setAuthNotice('If that address has an account, a reset link is on its way.')
+  }
+
   const handleAuth = async (event: FormEvent) => {
     event.preventDefault()
     setAuthError('')
+    setAuthNotice('')
     setError('')
     setAuthLoading(true)
     try {
@@ -423,8 +453,14 @@ export default function Chat() {
           <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={authMode === 'register' ? MIN_PASSWORD_LENGTH : 1} />
           {authMode === 'register' && <p style={styles.muted}>{describePasswordPolicy()}</p>}
           {authError && <div style={styles.error}>{authError}</div>}
+          {authNotice && <div style={styles.notice}>{authNotice}</div>}
           <button type="submit" style={styles.primary}>{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
-          <button type="button" onClick={() => setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))} style={styles.link}>
+          {authMode === 'login' && (
+            <button type="button" onClick={() => void handleForgotPassword()} style={styles.link}>
+              Forgot your password?
+            </button>
+          )}
+          <button type="button" onClick={() => { setAuthMode((mode) => (mode === 'login' ? 'register' : 'login')); setAuthError(''); setAuthNotice('') }} style={styles.link}>
             {authMode === 'login' ? 'Create an account' : 'Back to sign in'}
           </button>
         </form>
@@ -439,6 +475,7 @@ export default function Chat() {
       {showAccount && user && (
         <AccountPanel
           user={user}
+          initialTab={accountTab}
           onClose={() => setShowAccount(false)}
           onSignedOut={() => {
             setShowAccount(false)
@@ -460,7 +497,7 @@ export default function Chat() {
           ))}
         </div>
         <button onClick={() => setShowDocuments(true)} style={styles.link}>Documents</button>
-        <button onClick={() => setShowAccount(true)} style={styles.link}>Account</button>
+        <button onClick={() => { setAccountTab('account'); setShowAccount(true) }} style={styles.link}>Account</button>
         <button onClick={() => setShowIntegrations(true)} style={styles.link}>Integrations</button>
         <button onClick={() => void handleLogout()} style={styles.link}>Sign out</button>
       </aside>
@@ -536,6 +573,7 @@ const styles: Record<string, React.CSSProperties> = {
   confirmation: { maxWidth: 620, margin: '8px auto 16px', border: '1px solid #5a4724', background: '#17130b', borderRadius: 14, padding: 16 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
   error: { color: '#ffb4a9', background: '#281613', border: '1px solid #4a241e', borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 12 },
+  notice: { color: '#a9ffc0', background: '#132818', border: '1px solid #1e4a2c', borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 12 },
   center: { minHeight: '100vh', background: '#080808', color: '#fff', display: 'grid', placeItems: 'center', padding: 20 },
   card: { width: 'min(420px, 100%)', padding: 28, border: '1px solid #252525', borderRadius: 20, background: '#111', display: 'flex', flexDirection: 'column', gap: 12 },
   title: { margin: '6px 0 0', fontSize: 28 },

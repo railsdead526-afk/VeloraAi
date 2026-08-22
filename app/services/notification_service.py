@@ -160,7 +160,7 @@ def send_subscription_expiring_email(*, email: str, plan: str, days_left: int) -
         subject=f"Your {settings.app_name} {plan.upper()} plan renews soon",
         body=(
             f"Your {plan.upper()} plan ends in {days_left} day(s). "
-            f"Renew at {settings.frontend_base_url}/billing to avoid interruption."
+            f"Renew at {settings.frontend_base_url}/?panel=billing to avoid interruption."
         ),
         event="email.subscription_expiring",
         token=None,
@@ -173,7 +173,7 @@ def send_subscription_downgraded_email(*, email: str, plan: str) -> None:
         subject=f"Your {settings.app_name} {plan.upper()} plan has ended",
         body=(
             f"Your {plan.upper()} plan has ended and your account moved to the Free plan. "
-            f"Reactivate any time at {settings.frontend_base_url}/billing."
+            f"Reactivate any time at {settings.frontend_base_url}/?panel=billing."
         ),
         event="email.subscription_downgraded",
         token=None,
