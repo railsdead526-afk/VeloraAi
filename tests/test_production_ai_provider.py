@@ -13,6 +13,7 @@ def _production_settings() -> Settings:
     config.app_debug = False
     config.secret_key = "s" * 64
     config.database_url = "postgresql://user:pass@localhost/velora"
+    config.database_schema = "velora"
     config.rate_limit_storage_uri = "redis://localhost:6379/0"
     config.cors_origins = ["https://velora.example.com"]
     config.midtrans_server_key = "server-key"
