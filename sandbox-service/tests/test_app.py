@@ -4,7 +4,7 @@ os.environ["SANDBOX_SERVICE_TOKEN"] = "test-token"
 
 from fastapi.testclient import TestClient
 
-from app import app, create_workspace
+from sandbox_app import app, create_workspace
 
 client = TestClient(app)
 
