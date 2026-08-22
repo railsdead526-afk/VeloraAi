@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from app.core.config import settings
-from app.services.ai_service import _build_api_messages, _parse_usage, _provider_config
+from app.services.ai_provider import auth_headers, build_api_messages, get_provider_config, parse_usage
 from app.services.tool_confirmation import create_confirmation_token, verify_confirmation_token
 from app.tools.executor import ToolExecutionError, execute_tool
 from app.tools.registry import ToolRegistry
@@ -58,13 +58,6 @@ def _selected_tools(registry: ToolRegistry, messages: list[dict], plan: str):
     )
 
 
-def _headers(api_key: str) -> dict[str, str]:
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    return headers
-
-
 def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in RETRYABLE_STATUS_CODES
@@ -94,7 +87,8 @@ async def stream_ai_reply_with_tools(
     conversation_id: int | None = None,
     approved_confirmation_token: str | None = None,
 ) -> AsyncIterator[AgentStreamEvent]:
-    if settings.ai_provider == "mock":
+    config = get_provider_config()
+    if config.name == "mock":
         from app.services.ai_service import _mock_result
 
         result = _mock_result(messages)
@@ -109,14 +103,12 @@ async def stream_ai_reply_with_tools(
         )
         return
 
-    if settings.ai_provider not in {"openai", "llama"}:
+    if config.name not in {"openai", "llama"}:
         raise RuntimeError("AI provider is not configured")
-
-    api_key, base_url, model, provider = _provider_config()
-    if provider == "openai" and not api_key:
+    if config.name == "openai" and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
-    api_messages = _build_api_messages(messages)
+    api_messages = build_api_messages(messages)
     selected_tools = _selected_tools(registry, messages, plan)
     selected_names = {tool.name for tool in selected_tools}
     call_counts: dict[str, int] = {}
@@ -127,7 +119,7 @@ async def stream_ai_reply_with_tools(
     async with httpx.AsyncClient(timeout=httpx.Timeout(settings.ai_timeout_seconds)) as client:
         for round_index in range(MAX_TOOL_ROUNDS):
             payload: dict[str, Any] = {
-                "model": model,
+                "model": config.model,
                 "messages": api_messages,
                 "temperature": 0.7,
                 "tools": registry.schemas_for(selected_tools),
@@ -145,8 +137,8 @@ async def stream_ai_reply_with_tools(
                 try:
                     async with client.stream(
                         "POST",
-                        f"{base_url}/chat/completions",
-                        headers=_headers(api_key),
+                        f"{config.base_url}/chat/completions",
+                        headers=auth_headers(config),
                         json=payload,
                     ) as response:
                         if response.status_code in RETRYABLE_STATUS_CODES and attempt < settings.ai_max_retries:
@@ -166,7 +158,7 @@ async def stream_ai_reply_with_tools(
                             except json.JSONDecodeError:
                                 continue
 
-                            input_tokens, output_tokens = _parse_usage(data)
+                            input_tokens, output_tokens = parse_usage(data)
                             if input_tokens is not None and output_tokens is not None:
                                 total_input_tokens += input_tokens
                                 total_output_tokens += output_tokens
@@ -214,7 +206,7 @@ async def stream_ai_reply_with_tools(
                     type="done",
                     input_tokens=total_input_tokens if usage_seen else None,
                     output_tokens=total_output_tokens if usage_seen else None,
-                    model=model,
+                    model=config.model,
                 )
                 return
 
