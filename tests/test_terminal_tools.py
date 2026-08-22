@@ -98,3 +98,21 @@ def test_terminal_exec_cleans_up_when_execution_fails():
             terminal_exec({"command": "pytest -q"})
 
         client.delete_workspace.assert_called_once_with("workspace-456")
+
+
+def test_terminal_exec_reuses_explicit_workspace_without_deleting_it():
+    with patch("app.tools.terminal.SandboxClient") as client_cls:
+        client = client_cls.return_value
+        client.execute.return_value = {"exit_code": 0, "stdout": "ok", "stderr": ""}
+
+        result = terminal_exec({"command": "git status", "workspace_id": "workspace-persistent"})
+
+        assert result == {"exit_code": 0, "stdout": "ok", "stderr": ""}
+        client.create_workspace.assert_not_called()
+        client.execute.assert_called_once_with(
+            workspace_id="workspace-persistent",
+            command="git status",
+            cwd=None,
+            timeout=30,
+        )
+        client.delete_workspace.assert_not_called()
