@@ -15,6 +15,8 @@ git push
 ```
 
 Do this from a normal local checkout, or edit the file through the GitHub web UI.
+Both routes, with verification steps, are written out in
+[`docs/deployment.md`](../../docs/deployment.md) §1.
 
 ## Why it matters
 

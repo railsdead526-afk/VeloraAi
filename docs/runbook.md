@@ -101,7 +101,8 @@ Symptom: expired subscriptions still entitled — direct revenue loss. Run manua
 python -m scripts.run_maintenance
 ```
 
-The job is idempotent. Alert if it has not succeeded in 3 hours.
+The job is idempotent. Alert if it has not succeeded in 3 hours. Scheduling
+setup per platform is in `docs/deployment.md` §3.
 
 ## 5. Backup and restore
 

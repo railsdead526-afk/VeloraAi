@@ -1,0 +1,30 @@
+# Configuration for the MAINTENANCE service.
+#
+# Set this file as the config path in Railway:
+#   Service -> Settings -> Config-as-code -> railway.maintenance.toml
+#
+# Railway starts the container on schedule, runs the command, and expects the
+# process to exit. scripts/run_maintenance.py does exactly that.
+#
+# REVENUE-CRITICAL: without this service, subscriptions never expire and paid
+# plans effectively become permanent. Alert if it has not succeeded in 3 hours.
+#
+# Required variables on this service (same values as the web service):
+#   DATABASE_URL, DATABASE_SCHEMA, SECRET_KEY, CREDENTIAL_ENCRYPTION_KEYS,
+#   APP_ENV, AI_PROVIDER (+ its key), MIDTRANS_*, CORS_ORIGINS, TRUSTED_HOSTS,
+#   RATE_LIMIT_STORAGE_URI, METRICS_TOKEN, REQUIRE_EMAIL_VERIFICATION,
+#   FRONTEND_BASE_URL
+#
+# Plus, unique to this service:
+#   RUN_MIGRATIONS=false   -> the web service owns schema migrations
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[deploy]
+startCommand = "python -m scripts.run_maintenance"
+# Hourly, UTC. Railway's minimum interval is 5 minutes.
+cronSchedule = "0 * * * *"
+restartPolicyType = "NEVER"
+numReplicas = 1

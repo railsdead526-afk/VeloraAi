@@ -97,7 +97,7 @@ These are deliberately listed as open. None is satisfied by code alone.
 - [ ] Deploy the sandbox service on a dedicated host with Docker isolation
       enforced by runtime configuration.
 - [ ] Schedule `scripts/run_maintenance.py` hourly **and alert on failure**.
-      Without it, subscriptions never expire.
+      Without it, subscriptions never expire. See `docs/deployment.md` §3.
 - [ ] Move `.github/workflows-proposed/ci.yml` into `.github/workflows/`.
       The committed workflow is stale and will fail until this is done.
 - [ ] Enable branch protection on `main`: required `CI passed`, required

@@ -125,6 +125,8 @@ stop expiring. Alert on it (`docs/runbook.md` §8).
 python -m scripts.run_maintenance   # cron: 0 * * * *
 ```
 
+Setup per platform is in [`docs/deployment.md`](docs/deployment.md) §3.
+
 ## Configuration
 
 Every key is documented in [`.env.example`](.env.example). `Settings.validate()`
@@ -210,8 +212,8 @@ pip-audit -r requirements.txt --strict
 > **One manual step is pending.** The hardened pipeline lives at
 > `.github/workflows-proposed/ci.yml` because the automation used to prepare
 > this release lacked GitHub's `workflows` permission. Move it into
-> `.github/workflows/` and enable branch protection — see
-> [`.github/workflows-proposed/README.md`](.github/workflows-proposed/README.md).
+> `.github/workflows/` and enable branch protection — step-by-step in
+> [`docs/deployment.md`](docs/deployment.md).
 
 CI runs seven required jobs on every push and pull request: lint and types,
 tests with an enforced coverage floor, PostgreSQL migrations **including a full
@@ -255,6 +257,7 @@ Still open before taking public money — none of these are code problems:
 | --- | --- |
 | [`SECURITY.md`](SECURITY.md) | vulnerability reporting and controls |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | workflow, IP assignment, definition of done |
+| [`docs/deployment.md`](docs/deployment.md) | activation steps and required production variables |
 | [`docs/runbook.md`](docs/runbook.md) | on-call procedures |
 | [`docs/hardening-audit.md`](docs/hardening-audit.md) | verified controls and open gates |
 | [`docs/company-readiness-audit.md`](docs/company-readiness-audit.md) | full readiness assessment |
