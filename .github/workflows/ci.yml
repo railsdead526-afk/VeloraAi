@@ -87,6 +87,31 @@ jobs:
       - name: Verify migration head
         run: alembic current
 
+  sandbox-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sandbox-service
+    env:
+      SANDBOX_SERVICE_TOKEN: test-token
+      SANDBOX_ROOT: /tmp/velora-sandbox-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: sandbox-service/requirements.txt
+      - name: Install sandbox dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+      - name: Compile sandbox service
+        run: python -m compileall -q .
+      - name: Run sandbox service tests
+        run: pytest -q
+
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
