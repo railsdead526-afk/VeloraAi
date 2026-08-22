@@ -1,4 +1,4 @@
-# VeloraAi production hardening
+# VeloraAi production hardening audit
 
 Status: active engineering baseline. This document records verified repository controls and remaining production gates. It is not a claim that external infrastructure has been secured or audited by a third party.
 
@@ -15,12 +15,12 @@ Status: active engineering baseline. This document records verified repository c
 - Persistent workspace IDs are not an authorization mechanism and must be bound by orchestration.
 - Sandbox runtime is designed around network isolation, dropped capabilities, no-new-privileges, read-only root, resource limits, bounded output, and isolated workspaces.
 - Tool policy and approval checks are enforced before tool execution.
-- CI exercises SQLite tests, PostgreSQL migrations, frontend build/lint, and sandbox-service tests.
+- CI currently exercises SQLite tests, PostgreSQL migrations, frontend build/lint, and sandbox-service tests.
 
 ## Production gates still open
 
-- Set `AI_PROVIDER` to a real provider in production and run an end-to-end provider smoke test.
-- Provision production AI credentials through deployment secrets only.
+- Set `AI_PROVIDER` to a real provider in production and perform an end-to-end provider smoke test.
+- Provision production OpenAI/Llama credentials through deployment secrets only.
 - Configure production Midtrans credentials and production endpoints only after pricing is finalized.
 - Set real Pro/Max prices and verify server-side plan enforcement against payment state.
 - Provision shared rate-limit storage such as Redis.
