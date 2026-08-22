@@ -12,7 +12,11 @@ def terminal_exec(arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         client = SandboxClient()
         requested_workspace = arguments.get("workspace_id")
-        workspace_id = requested_workspace.strip() if isinstance(requested_workspace, str) and requested_workspace.strip() else None
+        workspace_id = (
+            requested_workspace.strip()
+            if isinstance(requested_workspace, str) and requested_workspace.strip()
+            else None
+        )
         owns_workspace = workspace_id is None
         workspace_id = workspace_id or client.create_workspace()
         try:

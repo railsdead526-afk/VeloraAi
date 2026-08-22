@@ -7,7 +7,7 @@ from app.services.document_ingestion import DocumentExtractionError, extract_tex
 
 
 def test_extract_utf8_text_file():
-    text, mime_type, source = extract_text("notes.md", "hello world".encode("utf-8"))
+    text, mime_type, source = extract_text("notes.md", b"hello world")
     assert text == "hello world"
     assert mime_type == "text/markdown"
     assert source == "md"

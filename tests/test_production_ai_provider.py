@@ -13,6 +13,7 @@ def _production_settings() -> Settings:
     config.app_debug = False
     config.secret_key = "s" * 64
     config.database_url = "postgresql://user:pass@localhost/velora"
+    config.database_schema = "velora"
     config.rate_limit_storage_uri = "redis://localhost:6379/0"
     config.cors_origins = ["https://velora.example.com"]
     config.midtrans_server_key = "server-key"
@@ -38,18 +39,27 @@ def test_production_openai_provider_requires_key():
 
 
 def test_provider_config_exposes_configured_openai_provider():
-    with patch.object(__import__("app.services.ai_provider", fromlist=["settings"]).settings, "ai_provider", "openai"), patch.object(
-        __import__("app.services.ai_provider", fromlist=["settings"]).settings,
-        "openai_api_key",
-        "test-key",
-    ), patch.object(
-        __import__("app.services.ai_provider", fromlist=["settings"]).settings,
-        "openai_base_url",
-        "https://api.example.test/v1",
-    ), patch.object(
-        __import__("app.services.ai_provider", fromlist=["settings"]).settings,
-        "openai_model",
-        "test-model",
+    with (
+        patch.object(
+            __import__("app.services.ai_provider", fromlist=["settings"]).settings,
+            "ai_provider",
+            "openai",
+        ),
+        patch.object(
+            __import__("app.services.ai_provider", fromlist=["settings"]).settings,
+            "openai_api_key",
+            "test-key",
+        ),
+        patch.object(
+            __import__("app.services.ai_provider", fromlist=["settings"]).settings,
+            "openai_base_url",
+            "https://api.example.test/v1",
+        ),
+        patch.object(
+            __import__("app.services.ai_provider", fromlist=["settings"]).settings,
+            "openai_model",
+            "test-model",
+        ),
     ):
         config = get_provider_config()
 
@@ -91,10 +101,13 @@ def test_openai_request_uses_configured_endpoint_and_model():
             return fake_response
 
     service_settings = __import__("app.services.ai_service", fromlist=["settings"]).settings
-    with patch.object(service_settings, "ai_provider", "openai"), patch.object(service_settings, "openai_api_key", "test-key"), patch.object(
-        service_settings, "openai_base_url", "https://api.example.test/v1"
-    ), patch.object(service_settings, "openai_model", "test-model"), patch.object(service_settings, "ai_max_retries", 0), patch(
-        "app.services.ai_service.httpx.Client", FakeClient
+    with (
+        patch.object(service_settings, "ai_provider", "openai"),
+        patch.object(service_settings, "openai_api_key", "test-key"),
+        patch.object(service_settings, "openai_base_url", "https://api.example.test/v1"),
+        patch.object(service_settings, "openai_model", "test-model"),
+        patch.object(service_settings, "ai_max_retries", 0),
+        patch("app.services.ai_service.httpx.Client", FakeClient),
     ):
         result = generate_ai_reply_from_history([{"role": "user", "content": "hello"}])
 

@@ -1,9 +1,18 @@
+# Configuration for the WEB service.
+#
+# The maintenance cron runs as a SEPARATE Railway service using
+# railway.maintenance.toml. Railway evaluates one config file per service and
+# a cron service must exit when it finishes, which a web server never does.
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "./Dockerfile"
 
 [deploy]
-healthcheckPath = "/api/v1/health"
-healthcheckTimeout = 30
+# /ready performs a deep dependency check, so a replica that cannot reach the
+# database, Redis, or the AI provider never receives traffic.
+healthcheckPath = "/api/v1/ready"
+healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+numReplicas = 2

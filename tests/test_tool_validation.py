@@ -15,34 +15,40 @@ def _tool(parameters):
 
 
 def test_validate_accepts_matching_arguments():
-    tool = _tool({
-        "type": "object",
-        "properties": {"limit": {"type": "integer", "minimum": 1}},
-        "required": ["limit"],
-        "additionalProperties": False,
-    })
+    tool = _tool(
+        {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "minimum": 1}},
+            "required": ["limit"],
+            "additionalProperties": False,
+        }
+    )
 
     assert validate_tool_arguments(tool, {"limit": 10}) == {"limit": 10}
 
 
 def test_validate_rejects_wrong_type():
-    tool = _tool({
-        "type": "object",
-        "properties": {"limit": {"type": "integer"}},
-        "required": ["limit"],
-        "additionalProperties": False,
-    })
+    tool = _tool(
+        {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "required": ["limit"],
+            "additionalProperties": False,
+        }
+    )
 
     with pytest.raises(ToolArgumentValidationError, match="limit"):
         validate_tool_arguments(tool, {"limit": "10"})
 
 
 def test_validate_rejects_unknown_fields():
-    tool = _tool({
-        "type": "object",
-        "properties": {"limit": {"type": "integer"}},
-        "additionalProperties": False,
-    })
+    tool = _tool(
+        {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "additionalProperties": False,
+        }
+    )
 
     with pytest.raises(ToolArgumentValidationError, match="Additional properties"):
         validate_tool_arguments(tool, {"limit": 10, "token": "secret"})

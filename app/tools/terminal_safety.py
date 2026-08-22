@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
-
 _MAX_COMMAND_LENGTH = 4096
 _MAX_PATH_LENGTH = 512
 _SAFE_PACKAGE = re.compile(r"^[A-Za-z0-9_@./:+-]+$")

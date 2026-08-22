@@ -1,0 +1,16 @@
+# Default owner for everything in this repository.
+*                               @railsdead526-afk
+
+# Security-critical surfaces require explicit owner review.
+/app/core/                      @railsdead526-afk
+/app/api/deps.py                @railsdead526-afk
+/app/services/credential_service.py @railsdead526-afk
+/app/services/auth_tokens.py    @railsdead526-afk
+/app/services/billing_service.py @railsdead526-afk
+/app/services/midtrans_service.py @railsdead526-afk
+/app/tools/                     @railsdead526-afk
+/alembic/                       @railsdead526-afk
+/sandbox-service/               @railsdead526-afk
+/.github/                       @railsdead526-afk
+/requirements.txt               @railsdead526-afk
+/web/package.json               @railsdead526-afk

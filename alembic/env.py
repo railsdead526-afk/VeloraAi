@@ -17,7 +17,10 @@ database_schema = os.getenv("DATABASE_SCHEMA", "public")
 if database_url.startswith(("postgresql://", "postgresql+psycopg2://")):
     url = make_url(database_url)
     query = dict(url.query)
-    query["options"] = f"-csearch_path={database_schema},public"
+    # `extensions` is appended for Supabase, which installs pgvector there
+    # rather than in `public`. Postgres silently ignores schemas in a
+    # search_path that do not exist, so this is inert everywhere else.
+    query["options"] = f"-csearch_path={database_schema},public,extensions"
     database_url = url.set(query=query).render_as_string(hide_password=False)
 
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))

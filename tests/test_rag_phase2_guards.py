@@ -56,20 +56,22 @@ def test_duplicate_ingest_race_returns_domain_error(db):
             return EmptyResult()
         return real_execute(statement, *args, **kwargs)
 
-    with patch.object(db, "execute", side_effect=simulated_stale_read):
-        with pytest.raises(DuplicateDocumentError) as exc:
-            create_pending_document(
-                db,
-                user_id=user_id,
-                name="race.txt",
-                text="same content",
-            )
+    with (
+        patch.object(db, "execute", side_effect=simulated_stale_read),
+        pytest.raises(DuplicateDocumentError) as exc,
+    ):
+        create_pending_document(
+            db,
+            user_id=user_id,
+            name="race.txt",
+            text="same content",
+        )
 
     assert exc.value.document_id == existing.id
-    persisted = real_execute(
-        select(Document).where(Document.id == existing.id)
-    ).scalar_one()
-    assert persisted.content_hash == "a636bd7cd42060a4d07fa1bfbcc010eb7794c2ba721e1e3e4c20335a15b66eaf"
+    persisted = real_execute(select(Document).where(Document.id == existing.id)).scalar_one()
+    assert (
+        persisted.content_hash == "a636bd7cd42060a4d07fa1bfbcc010eb7794c2ba721e1e3e4c20335a15b66eaf"
+    )
 
 
 def test_reindex_rejects_document_already_queued(db):

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -42,7 +42,7 @@ def _add_usage(db, user, conversation, *, created_at):
 
 def test_tokens_used_since(db):
     user, conversation = _seed_user_and_conversation(db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     _add_usage(db, user, conversation, created_at=now)
     _add_usage(db, user, conversation, created_at=now - timedelta(days=60))
     assert tokens_used_since(db, user.id, now - timedelta(days=1)) == 15
@@ -55,7 +55,18 @@ def test_quota_allows_unlimited(db):
 
 def test_quota_blocks_when_limit_reached(db):
     user, conversation = _seed_user_and_conversation(db)
-    db.add(AIUsage(user_id=user.id, conversation_id=conversation.id, provider="mock", model="mock", input_tokens=60, output_tokens=40, total_tokens=100, created_at=datetime.now(timezone.utc)))
+    db.add(
+        AIUsage(
+            user_id=user.id,
+            conversation_id=conversation.id,
+            provider="mock",
+            model="mock",
+            input_tokens=60,
+            output_tokens=40,
+            total_tokens=100,
+            created_at=datetime.now(UTC),
+        )
+    )
     db.commit()
     with pytest.raises(QuotaExceededError):
         enforce_monthly_token_quota(db, user_id=user.id, monthly_limit=100)
@@ -63,14 +74,36 @@ def test_quota_blocks_when_limit_reached(db):
 
 def test_quota_allows_request_that_exactly_reaches_limit(db):
     user, conversation = _seed_user_and_conversation(db)
-    db.add(AIUsage(user_id=user.id, conversation_id=conversation.id, provider="mock", model="mock", input_tokens=60, output_tokens=30, total_tokens=90, created_at=datetime.now(timezone.utc)))
+    db.add(
+        AIUsage(
+            user_id=user.id,
+            conversation_id=conversation.id,
+            provider="mock",
+            model="mock",
+            input_tokens=60,
+            output_tokens=30,
+            total_tokens=90,
+            created_at=datetime.now(UTC),
+        )
+    )
     db.commit()
     enforce_monthly_token_quota(db, user_id=user.id, monthly_limit=100, additional_tokens=10)
 
 
 def test_quota_blocks_request_that_would_exceed_limit(db):
     user, conversation = _seed_user_and_conversation(db)
-    db.add(AIUsage(user_id=user.id, conversation_id=conversation.id, provider="mock", model="mock", input_tokens=60, output_tokens=30, total_tokens=90, created_at=datetime.now(timezone.utc)))
+    db.add(
+        AIUsage(
+            user_id=user.id,
+            conversation_id=conversation.id,
+            provider="mock",
+            model="mock",
+            input_tokens=60,
+            output_tokens=30,
+            total_tokens=90,
+            created_at=datetime.now(UTC),
+        )
+    )
     db.commit()
     with pytest.raises(QuotaExceededError):
         enforce_monthly_token_quota(db, user_id=user.id, monthly_limit=100, additional_tokens=11)
@@ -89,7 +122,7 @@ def test_quota_rejects_negative_additional_tokens(db):
 
 def test_free_plan_daily_request_limit(db):
     user, conversation = _seed_user_and_conversation(db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for _ in range(20):
         _add_usage(db, user, conversation, created_at=now)
 
@@ -99,7 +132,7 @@ def test_free_plan_daily_request_limit(db):
 
 def test_free_plan_daily_request_limit_resets_after_day_boundary(db):
     user, conversation = _seed_user_and_conversation(db)
-    yesterday = datetime.now(timezone.utc) - timedelta(days=1, minutes=1)
+    yesterday = datetime.now(UTC) - timedelta(days=1, minutes=1)
     for _ in range(20):
         _add_usage(db, user, conversation, created_at=yesterday)
 

@@ -6,8 +6,13 @@ from tests.conftest import TestingSessionLocal, client
 
 
 def register_login(email: str):
-    password = "securepass123"
-    assert client.post("/api/v1/auth/register", json={"email": email, "password": password}).status_code == 201
+    password = "Str0ng!Passw0rd"
+    assert (
+        client.post(
+            "/api/v1/auth/register", json={"email": email, "password": password}
+        ).status_code
+        == 201
+    )
     login = client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     token = login.json()["access_token"]
@@ -19,7 +24,10 @@ def test_midtrans_pending_failed_settlement_duplicate_webhook_flow(monkeypatch):
     monkeypatch.setattr("app.api.v1.payments.settings.pro_price_idr", 19900)
     monkeypatch.setattr(
         "app.services.midtrans_service.MidtransService.create_snap_transaction",
-        lambda self, **kwargs: {"token": "sandbox-token", "redirect_url": "https://sandbox.example/pay"},
+        lambda self, **kwargs: {
+            "token": "sandbox-token",
+            "redirect_url": "https://sandbox.example/pay",
+        },
     )
 
     created = client.post("/api/v1/payments/create", headers=headers, json={"plan": "pro"})
@@ -35,9 +43,26 @@ def test_midtrans_pending_failed_settlement_duplicate_webhook_flow(monkeypatch):
             "payment_type": "gopay",
         }
 
-    payload = {"order_id": order_id, "status_code": "201", "gross_amount": "19900", "signature_key": "valid"}
-    with patch("app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True), \
-         patch("app.api.v1.payments.MidtransService.get_transaction_status", side_effect=[verified("pending"), verified("deny"), verified("settlement"), verified("settlement")]):
+    payload = {
+        "order_id": order_id,
+        "status_code": "201",
+        "gross_amount": "19900",
+        "signature_key": "valid",
+    }
+    with (
+        patch(
+            "app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True
+        ),
+        patch(
+            "app.api.v1.payments.MidtransService.get_transaction_status",
+            side_effect=[
+                verified("pending"),
+                verified("deny"),
+                verified("settlement"),
+                verified("settlement"),
+            ],
+        ),
+    ):
         pending = client.post("/api/v1/payments/notification", json=payload)
         failed = client.post("/api/v1/payments/notification", json=payload)
         settled = client.post("/api/v1/payments/notification", json=payload)
@@ -66,22 +91,37 @@ def test_midtrans_failed_payment_does_not_activate_subscription(monkeypatch):
     monkeypatch.setattr("app.api.v1.payments.settings.pro_price_idr", 19900)
     monkeypatch.setattr(
         "app.services.midtrans_service.MidtransService.create_snap_transaction",
-        lambda self, **kwargs: {"token": "sandbox-token", "redirect_url": "https://sandbox.example/pay"},
+        lambda self, **kwargs: {
+            "token": "sandbox-token",
+            "redirect_url": "https://sandbox.example/pay",
+        },
     )
 
     created = client.post("/api/v1/payments/create", headers=headers, json={"plan": "pro"})
     order_id = created.json()["order_id"]
-    with patch("app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True), \
-         patch("app.api.v1.payments.MidtransService.get_transaction_status", return_value={
-             "order_id": order_id,
-             "gross_amount": "19900",
-             "transaction_id": "tx-deny",
-             "transaction_status": "deny",
-             "payment_type": "gopay",
-         }):
+    with (
+        patch(
+            "app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True
+        ),
+        patch(
+            "app.api.v1.payments.MidtransService.get_transaction_status",
+            return_value={
+                "order_id": order_id,
+                "gross_amount": "19900",
+                "transaction_id": "tx-deny",
+                "transaction_status": "deny",
+                "payment_type": "gopay",
+            },
+        ),
+    ):
         response = client.post(
             "/api/v1/payments/notification",
-            json={"order_id": order_id, "status_code": "202", "gross_amount": "19900", "signature_key": "valid"},
+            json={
+                "order_id": order_id,
+                "status_code": "202",
+                "gross_amount": "19900",
+                "signature_key": "valid",
+            },
         )
     assert response.status_code == 200
 
@@ -102,7 +142,9 @@ def test_midtrans_refund_marks_subscription_canceled(monkeypatch):
     try:
         user = db.query(User).filter(User.email == "midtrans-refund-flow@example.com").one()
         user.role = "pro"
-        subscription = Subscription(user_id=user.id, plan="pro", provider="midtrans", status="active")
+        subscription = Subscription(
+            user_id=user.id, plan="pro", provider="midtrans", status="active"
+        )
         db.add(subscription)
         db.flush()
         payment = Payment(
@@ -139,7 +181,7 @@ def test_midtrans_refund_marks_subscription_canceled(monkeypatch):
 
     login = client.post(
         "/api/v1/auth/login",
-        json={"email": "midtrans-refund-flow@example.com", "password": "securepass123"},
+        json={"email": "midtrans-refund-flow@example.com", "password": "Str0ng!Passw0rd"},
     )
     admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     response = client.post(f"/api/v1/payments/{payment_id}/refund", headers=admin_headers)
@@ -148,7 +190,9 @@ def test_midtrans_refund_marks_subscription_canceled(monkeypatch):
     db = TestingSessionLocal()
     try:
         payment = db.query(Payment).filter(Payment.id == payment_id).one()
-        subscription = db.query(Subscription).filter(Subscription.id == payment.subscription_id).one()
+        subscription = (
+            db.query(Subscription).filter(Subscription.id == payment.subscription_id).one()
+        )
         assert payment.status == "refunded"
         assert payment.refund_status == "200"
         assert payment.refund_amount == 19900

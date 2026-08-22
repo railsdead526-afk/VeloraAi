@@ -4,8 +4,8 @@ import pytest
 
 from app.tools.bootstrap import get_registry
 from app.tools.terminal import terminal_exec
-from app.tools.terminal_tools import _quote, terminal_run_build, terminal_run_tests
 from app.tools.terminal_safety import TerminalSafetyError, validate_relative_path
+from app.tools.terminal_tools import _quote, terminal_run_build, terminal_run_tests
 
 
 def test_terminal_capabilities_are_registered():

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.core.plans import get_plan_policy
 
@@ -14,7 +14,7 @@ def test_admin_daily_quota_is_unlimited():
 
 
 def test_daily_reset_is_utc_midnight():
-    now = datetime(2026, 8, 21, 12, 30, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 21, 12, 30, tzinfo=UTC)
     reset = now.replace(hour=0, minute=0, second=0, microsecond=0)
     assert reset.hour == 0
-    assert reset.tzinfo == timezone.utc
+    assert reset.tzinfo == UTC

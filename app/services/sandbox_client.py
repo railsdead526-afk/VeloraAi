@@ -12,8 +12,9 @@ class SandboxClient:
     """Versioned client for the isolated sandbox control service."""
 
     def __init__(self, *, base_url: str | None = None, token: str | None = None) -> None:
-        self.base_url = (base_url or os.getenv("TERMINAL_SANDBOX_URL", "")).rstrip("/")
-        self.token = token or os.getenv("TERMINAL_SANDBOX_TOKEN", "")
+        resolved_url: str = base_url or os.getenv("TERMINAL_SANDBOX_URL") or ""
+        self.base_url = resolved_url.rstrip("/")
+        self.token: str = token or os.getenv("TERMINAL_SANDBOX_TOKEN") or ""
         if not self.base_url or not self.token:
             raise ToolProviderError("Terminal sandbox is not configured")
 
@@ -22,7 +23,9 @@ class SandboxClient:
 
     def create_workspace(self) -> str:
         try:
-            response = httpx.post(f"{self.base_url}/v1/workspaces", headers=self._headers(), timeout=10)
+            response = httpx.post(
+                f"{self.base_url}/v1/workspaces", headers=self._headers(), timeout=10
+            )
             response.raise_for_status()
             payload = response.json()
             workspace_id = payload.get("workspace_id")

@@ -69,10 +69,21 @@ def _is_retryable_http_error(exc: Exception) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         status_code = exc.response.status_code
         return status_code in RETRYABLE_STATUS_CODES
-    return isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.RemoteProtocolError))
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+        ),
+    )
 
 
-def _post_completion_sync(client: httpx.Client, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+def _post_completion_sync(
+    client: httpx.Client, url: str, *, headers: dict[str, str], payload: dict[str, Any]
+) -> dict[str, Any]:
     attempts = settings.ai_max_retries + 1
     for attempt in range(attempts):
         try:
@@ -82,12 +93,17 @@ def _post_completion_sync(client: httpx.Client, url: str, *, headers: dict[str, 
         except (httpx.HTTPError, ValueError) as exc:
             if attempt >= attempts - 1 or not _is_retryable_http_error(exc):
                 raise
-            logger.warning("Retrying AI provider request", extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries})
+            logger.warning(
+                "Retrying AI provider request",
+                extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries},
+            )
             continue
     raise RuntimeError("AI provider request failed")
 
 
-async def _post_completion_async(client: httpx.AsyncClient, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+async def _post_completion_async(
+    client: httpx.AsyncClient, url: str, *, headers: dict[str, str], payload: dict[str, Any]
+) -> dict[str, Any]:
     attempts = settings.ai_max_retries + 1
     for attempt in range(attempts):
         try:
@@ -99,7 +115,10 @@ async def _post_completion_async(client: httpx.AsyncClient, url: str, *, headers
         except (httpx.HTTPError, ValueError) as exc:
             if attempt >= attempts - 1 or not _is_retryable_http_error(exc):
                 raise
-            logger.warning("Retrying async AI provider request", extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries})
+            logger.warning(
+                "Retrying async AI provider request",
+                extra={"attempt": attempt + 1, "max_retries": settings.ai_max_retries},
+            )
             continue
     raise RuntimeError("AI provider request failed")
 
@@ -113,6 +132,7 @@ def generate_ai_reply_with_tools(
 ) -> AIResult:
     if settings.ai_provider == "mock":
         from app.services.ai_service import _mock_result
+
         return _mock_result(messages)
 
     if settings.ai_provider not in {"openai", "llama"}:
@@ -215,6 +235,7 @@ async def generate_ai_reply_with_tools_async(
 ) -> AIResult:
     if settings.ai_provider == "mock":
         from app.services.ai_service import _mock_result
+
         return _mock_result(messages)
     if settings.ai_provider not in {"openai", "llama"}:
         raise RuntimeError("AI provider is not configured")

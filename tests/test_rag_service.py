@@ -24,7 +24,10 @@ def test_embed_texts_rejects_incomplete_provider(monkeypatch):
             return {"data": []}
 
     monkeypatch.setattr("app.services.rag_service.httpx.post", lambda *args, **kwargs: Response())
-    monkeypatch.setattr("app.services.rag_service._embedding_config", lambda: ("http://embedding.test/v1", "", "test-model"))
+    monkeypatch.setattr(
+        "app.services.rag_service._embedding_config",
+        lambda: ("http://embedding.test/v1", "", "test-model"),
+    )
     with pytest.raises(Exception, match="incomplete"):
         embed_texts(["hello"])
 

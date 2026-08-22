@@ -7,7 +7,9 @@ from app.services.quota_service import enforce_plan_quota, reserve_plan_request_
 from app.services.rag_service import build_context, retrieve_chunks
 
 
-def enforce_user_plan_quota(db: Session, user, *, additional_tokens: int = 0, check_request_limits: bool = True) -> None:
+def enforce_user_plan_quota(
+    db: Session, user, *, additional_tokens: int = 0, check_request_limits: bool = True
+) -> None:
     enforce_plan_quota(
         db,
         user_id=user.id,

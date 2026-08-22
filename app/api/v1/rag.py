@@ -1,6 +1,15 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -8,7 +17,12 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models.document import Document
-from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
+from app.schemas.document import (
+    DocumentCreate,
+    DocumentResponse,
+    DocumentSearchRequest,
+    DocumentSearchResult,
+)
 from app.services.document_ingestion import DocumentExtractionError, extract_text
 from app.services.embedding_usage_service import embedding_usage_summary
 from app.services.rag_jobs import process_document_index
@@ -51,7 +65,9 @@ def create_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.post("/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/documents/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED
+)
 @limiter.limit(settings.rate_limit_chat)
 def upload_document(
     request: Request,
@@ -63,7 +79,10 @@ def upload_document(
     try:
         content = file.file.read(settings.document_max_upload_bytes + 1)
         if len(content) > settings.document_max_upload_bytes:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Document exceeds the upload size limit")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Document exceeds the upload size limit",
+            )
         text, mime_type, source = extract_text(file.filename or "document", content)
         document = create_pending_document(
             db,
@@ -97,7 +116,7 @@ def list_documents(db: Session = Depends(get_db), current_user=Depends(get_curre
 
 @router.get("/usage")
 def get_embedding_usage(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    since = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    since = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return embedding_usage_summary(db, user_id=current_user.id, since=since)
 
 
@@ -115,12 +134,18 @@ def reindex_one_document(
     except DocumentIndexInProgressError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except RAGError as exc:
-        status_code = status.HTTP_404_NOT_FOUND if str(exc) == "Document not found" else status.HTTP_400_BAD_REQUEST
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if str(exc) == "Document not found"
+            else status.HTTP_400_BAD_REQUEST
+        )
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_one_document(document_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_one_document(
+    document_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)
+):
     try:
         delete_document(db, user_id=current_user.id, document_id=document_id)
     except RAGError as exc:
@@ -130,11 +155,20 @@ def delete_one_document(document_id: int, db: Session = Depends(get_db), current
 
 @router.post("/search", response_model=list[DocumentSearchResult])
 @limiter.limit(settings.rate_limit_chat)
-def search_documents(request: Request, payload: DocumentSearchRequest, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def search_documents(
+    request: Request,
+    payload: DocumentSearchRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     try:
-        results = retrieve_chunks(db, user_id=current_user.id, query=payload.query, limit=payload.limit)
+        results = retrieve_chunks(
+            db, user_id=current_user.id, query=payload.query, limit=payload.limit
+        )
     except RAGError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
     return [
         DocumentSearchResult(
             document_id=chunk.document_id,

@@ -51,7 +51,7 @@ async def execute_tool(
                 timeout=tool.timeout_seconds,
             )
         return result
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise ToolExecutionError("Tool execution timed out") from exc
     except ToolExecutionError:
         raise

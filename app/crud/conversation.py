@@ -23,11 +23,7 @@ def get_user_conversations(db: Session, user_id: int, limit: int = 50, offset: i
 
 
 def get_conversation_by_id(db: Session, conversation_id: int):
-    return (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id)
-        .first()
-    )
+    return db.query(Conversation).filter(Conversation.id == conversation_id).first()
 
 
 def update_conversation_title(db: Session, conversation: Conversation, title: str):

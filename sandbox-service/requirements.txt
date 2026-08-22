@@ -1,6 +1,9 @@
-fastapi==0.115.12
-uvicorn[standard]==0.34.0
-pydantic==2.11.3
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn[standard]==0.52.4
+pydantic==2.13.4
 docker==7.1.0
-pytest==8.3.2
 httpx==0.28.1
+
+# Test-only, kept here because the sandbox service is deployed standalone.
+pytest==9.1.1

@@ -14,7 +14,11 @@ class FakeResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise httpx.HTTPStatusError("error", request=httpx.Request("POST", "http://sandbox"), response=httpx.Response(self.status_code))
+            raise httpx.HTTPStatusError(
+                "error",
+                request=httpx.Request("POST", "http://sandbox"),
+                response=httpx.Response(self.status_code),
+            )
 
     def json(self) -> object:
         return self._payload
@@ -55,7 +59,9 @@ def test_execute_caps_timeout_and_uses_workspace_route(monkeypatch: pytest.Monke
     monkeypatch.setattr(httpx, "post", fake_post)
     client = SandboxClient(base_url="http://sandbox", token="secret")
 
-    result = client.execute(workspace_id="b" * 32, command="python --version", cwd="src", timeout=999)
+    result = client.execute(
+        workspace_id="b" * 32, command="python --version", cwd="src", timeout=999
+    )
 
     assert result["exit_code"] == 0
     assert captured["url"] == f"http://sandbox/v1/workspaces/{'b' * 32}/execute"

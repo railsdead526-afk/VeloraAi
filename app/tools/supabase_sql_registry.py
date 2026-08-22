@@ -1,7 +1,6 @@
 from app.tools.base import ToolDefinition
 from app.tools.supabase_tools import supabase_execute_sql, supabase_query_sql
 
-
 READ_SQL_PLANS = frozenset({"pro", "max", "admin"})
 WRITE_SQL_PLANS = frozenset({"max", "admin"})
 SQL_PARAMETERS = {

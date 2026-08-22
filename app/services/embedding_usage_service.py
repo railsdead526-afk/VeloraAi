@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -38,7 +38,9 @@ def record_embedding_usage(
     return entry
 
 
-def embedding_usage_summary(db: Session, *, user_id: int, since: datetime | None = None) -> dict[str, int]:
+def embedding_usage_summary(
+    db: Session, *, user_id: int, since: datetime | None = None
+) -> dict[str, int]:
     query = db.query(
         func.coalesce(func.sum(EmbeddingUsage.input_tokens), 0),
         func.coalesce(func.sum(EmbeddingUsage.item_count), 0),

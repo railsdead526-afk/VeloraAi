@@ -7,9 +7,10 @@ import hmac
 import json
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import delete, update
+from sqlalchemy.engine import CursorResult
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -134,4 +135,6 @@ def verify_confirmation_token(
         )
         db.commit()
 
-    return result.rowcount == 1
+    # `Session.execute` is typed as returning Result, but an UPDATE always
+    # yields a CursorResult, which is what carries rowcount.
+    return cast("CursorResult[Any]", result).rowcount == 1
