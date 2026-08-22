@@ -11,7 +11,10 @@ def terminal_exec(arguments: dict[str, Any]) -> dict[str, Any]:
 
     try:
         client = SandboxClient()
-        workspace_id = client.create_workspace()
+        requested_workspace = arguments.get("workspace_id")
+        workspace_id = requested_workspace.strip() if isinstance(requested_workspace, str) and requested_workspace.strip() else None
+        owns_workspace = workspace_id is None
+        workspace_id = workspace_id or client.create_workspace()
         try:
             return client.execute(
                 workspace_id=workspace_id,
@@ -20,7 +23,8 @@ def terminal_exec(arguments: dict[str, Any]) -> dict[str, Any]:
                 timeout=min(int(arguments.get("timeout", 30)), 60),
             )
         finally:
-            client.delete_workspace(workspace_id)
+            if owns_workspace:
+                client.delete_workspace(workspace_id)
     except ToolProviderError:
         raise
     except (TypeError, ValueError) as exc:
