@@ -14,7 +14,7 @@ class Settings:
     algorithm = os.getenv("ALGORITHM", "HS256")
     access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
-    ai_provider = os.getenv("AI_PROVIDER", "mock").lower()
+    ai_provider = os.getenv("AI_PROVIDER", "openai" if os.getenv("APP_ENV", "development").lower() == "production" else "mock").lower()
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
@@ -71,6 +71,8 @@ class Settings:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
         if self.is_production:
+            if self.ai_provider == "mock":
+                raise RuntimeError("AI_PROVIDER=mock is forbidden in production")
             if not self.secret_key or self.secret_key == "change-this-secret-key":
                 raise RuntimeError("SECRET_KEY must be configured in production")
             if len(self.secret_key) < 32:
@@ -95,6 +97,10 @@ class Settings:
                 raise RuntimeError("Midtrans credentials must be configured in production")
             if self.pro_price_idr <= 0 or self.max_price_idr <= 0:
                 raise RuntimeError("Pro and Max prices must be configured in production")
+            if not self.midtrans_is_production:
+                raise RuntimeError("MIDTRANS_IS_PRODUCTION must be true in production")
+            if "sandbox" in self.midtrans_base_url or "sandbox" in self.midtrans_snap_base_url:
+                raise RuntimeError("Production Midtrans endpoints must not use sandbox URLs")
 
 
 settings = Settings()
