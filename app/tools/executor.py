@@ -3,6 +3,7 @@ import inspect
 from typing import Any
 
 from app.services.tool_validation import ToolArgumentValidationError, validate_tool_arguments
+from app.tools.policy import policy
 from app.tools.registry import ToolRegistry
 
 
@@ -21,7 +22,7 @@ async def execute_tool(
 ) -> Any:
     tool = registry.get(name)
 
-    if not tool.allows_plan(plan):
+    if not policy.allows(tool, plan=plan):
         raise ToolExecutionError("Tool is not available for this plan")
 
     try:
@@ -29,7 +30,7 @@ async def execute_tool(
     except ToolArgumentValidationError as exc:
         raise ToolExecutionError(str(exc)) from exc
 
-    if tool.requires_confirmation and not confirmed:
+    if policy.requires_approval(tool) and not confirmed:
         raise ToolExecutionError("Tool execution requires user confirmation")
 
     counts = call_counts if call_counts is not None else {}
