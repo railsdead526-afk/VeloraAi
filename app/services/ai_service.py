@@ -9,13 +9,14 @@ from typing import Optional
 import httpx
 
 from app.core.config import settings
+from app.services.ai_provider import (
+    SYSTEM_PROMPT,
+    build_api_messages,
+    get_provider_config,
+    parse_usage,
+)
 
 logger = logging.getLogger(__name__)
-
-SYSTEM_PROMPT = (
-    "Kamu adalah asisten AI VeloraAi. Jawab dengan jelas, akurat, dan ringkas "
-    "kecuali user meminta penjelasan mendalam."
-)
 
 
 @dataclass
@@ -36,52 +37,40 @@ class AIResult:
         return NotImplemented
 
 
+# Backward-compatible helper names for existing imports/tests.
 def _build_api_messages(messages: list[dict]) -> list[dict]:
-    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    recent_messages = messages[-settings.ai_max_history_messages :]
-    for msg in recent_messages:
-        role = msg.get("role")
-        content = (msg.get("content") or "").strip()
-        if role in {"user", "assistant", "system"} and content:
-            api_messages.append({"role": role, "content": content})
-    return api_messages
+    return build_api_messages(messages)
 
 
 def _parse_usage(data: dict) -> tuple[Optional[int], Optional[int]]:
-    usage = data.get("usage") or {}
-    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
-    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
-    if isinstance(input_tokens, int) and isinstance(output_tokens, int):
-        return input_tokens, output_tokens
-    return None, None
+    return parse_usage(data)
 
 
 def _provider_config() -> tuple[str, str, str, str]:
-    if settings.ai_provider == "openai":
-        return settings.openai_api_key, settings.openai_base_url, settings.openai_model, "openai"
-    if settings.ai_provider == "llama":
-        return settings.llama_api_key, settings.llama_base_url, settings.llama_model, "llama"
-    raise RuntimeError("AI provider is not configured")
+    config = get_provider_config()
+    return config.api_key, config.base_url, config.model, config.name
 
 
 def _request_openai_compatible(messages: list[dict]) -> AIResult:
-    api_key, base_url, model, provider = _provider_config()
-    if provider == "openai" and not api_key:
+    config = get_provider_config()
+    if config.name == "mock":
+        return _mock_result(messages)
+    if config.name == "openai" and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
     for attempt in range(settings.ai_max_retries + 1):
         try:
             headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
+            if config.api_key:
+                headers["Authorization"] = f"Bearer {config.api_key}"
             with httpx.Client(timeout=httpx.Timeout(settings.ai_timeout_seconds)) as client:
                 response = client.post(
-                    f"{base_url}/chat/completions",
+                    f"{config.base_url}/chat/completions",
                     headers=headers,
                     json={
-                        "model": model,
-                        "messages": _build_api_messages(messages),
+                        "model": config.model,
+                        "messages": build_api_messages(messages),
                         "temperature": 0.7,
                     },
                 )
@@ -93,8 +82,8 @@ def _request_openai_compatible(messages: list[dict]) -> AIResult:
                 content = data.get("choices", [{}])[0].get("message", {}).get("content")
                 if not content:
                     raise RuntimeError("AI provider returned an empty response")
-                input_tokens, output_tokens = _parse_usage(data)
-                return AIResult(content.strip(), input_tokens, output_tokens, model)
+                input_tokens, output_tokens = parse_usage(data)
+                return AIResult(content.strip(), input_tokens, output_tokens, config.model)
         except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
             last_error = exc
             logger.exception("AI provider request failed on attempt %s", attempt + 1)
@@ -140,9 +129,10 @@ def _mock_result(messages: list[dict]) -> AIResult:
 
 
 def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
-    if settings.ai_provider == "mock":
+    config = get_provider_config()
+    if config.name == "mock":
         return _mock_result(messages)
-    if settings.ai_provider in {"openai", "llama"}:
+    if config.name in {"openai", "llama"}:
         return _request_openai_compatible(messages)
     raise RuntimeError("AI provider is not configured")
 
@@ -158,7 +148,8 @@ async def stream_ai_reply_from_history(
         yield "Halo, ada yang bisa saya bantu?"
         return
 
-    if settings.ai_provider == "mock":
+    config = get_provider_config()
+    if config.name == "mock":
         result = _mock_result(messages)
         if usage_sink is not None:
             usage_sink.update({"input_tokens": result.input_tokens, "output_tokens": result.output_tokens, "model": result.model})
@@ -167,11 +158,9 @@ async def stream_ai_reply_from_history(
             yield word if index == 0 else f" {word}"
         return
 
-    if settings.ai_provider not in {"openai", "llama"}:
+    if config.name not in {"openai", "llama"}:
         raise RuntimeError("AI provider is not configured")
-
-    api_key, base_url, model, provider = _provider_config()
-    if provider == "openai" and not api_key:
+    if config.name == "openai" and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
@@ -180,16 +169,16 @@ async def stream_ai_reply_from_history(
         try:
             timeout = httpx.Timeout(settings.ai_timeout_seconds)
             headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
+            if config.api_key:
+                headers["Authorization"] = f"Bearer {config.api_key}"
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{base_url}/chat/completions",
+                    f"{config.base_url}/chat/completions",
                     headers=headers,
                     json={
-                        "model": model,
-                        "messages": _build_api_messages(messages),
+                        "model": config.model,
+                        "messages": build_api_messages(messages),
                         "temperature": 0.7,
                         "stream": True,
                         "stream_options": {"include_usage": True},
@@ -210,10 +199,10 @@ async def stream_ai_reply_from_history(
                             data = json.loads(payload)
                         except json.JSONDecodeError:
                             continue
-                        input_tokens, output_tokens = _parse_usage(data)
+                        input_tokens, output_tokens = parse_usage(data)
                         if input_tokens is not None and output_tokens is not None:
                             if usage_sink is not None:
-                                usage_sink.update({"input_tokens": input_tokens, "output_tokens": output_tokens, "model": model})
+                                usage_sink.update({"input_tokens": input_tokens, "output_tokens": output_tokens, "model": config.model})
                             continue
                         choices = data.get("choices") or []
                         if not choices:
