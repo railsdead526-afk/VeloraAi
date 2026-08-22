@@ -33,6 +33,8 @@ def _production_settings() -> Settings:
     config.frontend_base_url = "https://app.velora.example.com"
     config.metrics_enabled = True
     config.metrics_token = "scrape-token"
+    config.smtp_host = "smtp.example.com"
+    config.smtp_from = "VeloraAi <no-reply@velora.example.com>"
     return config
 
 
@@ -90,6 +92,30 @@ def test_plaintext_frontend_url_is_refused():
         config.validate()
 
 
+def test_production_without_an_email_transport_is_refused():
+    """Verification and reset links are undeliverable without SMTP."""
+    config = _production_settings()
+    config.smtp_host = ""
+    with pytest.raises(RuntimeError, match="SMTP_HOST"):
+        config.validate()
+
+
+def test_production_without_a_from_address_is_refused():
+    config = _production_settings()
+    config.smtp_from = ""
+    config.smtp_username = ""
+    with pytest.raises(RuntimeError, match="SMTP_FROM"):
+        config.validate()
+
+
+def test_conflicting_tls_modes_are_refused():
+    config = _production_settings()
+    config.smtp_use_ssl = True
+    config.smtp_use_starttls = True
+    with pytest.raises(RuntimeError, match="mutually exclusive"):
+        config.validate()
+
+
 def test_unprotected_metrics_endpoint_is_refused():
     config = _production_settings()
     config.metrics_token = ""
@@ -124,6 +150,9 @@ def test_invalid_encryption_key_is_refused_outside_production():
         ("password_reset_ttl_minutes", 0),
         ("email_verification_ttl_hours", 0),
         ("database_pool_size", 0),
+        ("smtp_port", 0),
+        ("smtp_port", 70000),
+        ("smtp_timeout_seconds", 0.0),
     ],
 )
 def test_nonsensical_values_are_refused_everywhere(attribute, value):

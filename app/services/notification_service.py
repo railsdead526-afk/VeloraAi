@@ -1,18 +1,20 @@
 """Outbound notifications.
 
-There is deliberately no SMTP client wired up yet. Rather than pretend an
-email was sent, this module logs a structured, redacted event and exposes a
-single seam (`set_email_sender`) for the real provider to be plugged in.
-
-In non-production environments the token is included in the log so the flow can
-actually be completed locally. In production it never is.
+Delivery goes through a pluggable sender. When SMTP is configured the built-in
+transport is used; otherwise the message is logged instead of silently
+disappearing, and in non-production the token is included so local flows can be
+completed. `set_email_sender` remains the seam for a hosted provider
+(SendGrid, SES, Resend) or a test double.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import smtplib
+import ssl
 from collections.abc import Callable
+from email.message import EmailMessage
 
 from app.core.config import settings
 from app.core.observability import get_request_id
@@ -25,18 +27,87 @@ EmailSender = Callable[[str, str, str], None]
 _sender: EmailSender | None = None
 
 
+class EmailDeliveryError(RuntimeError):
+    """Raised when a configured transport could not deliver a message."""
+
+
 def set_email_sender(sender: EmailSender | None) -> None:
     """Install the production email transport (or a test double)."""
     global _sender
     _sender = sender
 
 
-def _deliver(*, to: str, subject: str, body: str, event: str, token: str | None) -> None:
+def smtp_sender(to: str, subject: str, body: str) -> None:
+    """Minimal, dependency-free SMTP transport.
+
+    Uses implicit TLS on port 465 and STARTTLS otherwise. Certificate
+    verification is always on; there is no opt-out, because an unverified
+    channel would leak password-reset tokens.
+    """
+    if not settings.smtp_host:
+        raise EmailDeliveryError("SMTP_HOST is not configured")
+
+    message = EmailMessage()
+    message["From"] = settings.smtp_from or settings.smtp_username
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body)
+
+    context = ssl.create_default_context()
+    timeout = settings.smtp_timeout_seconds
+
+    try:
+        if settings.smtp_use_ssl:
+            with smtplib.SMTP_SSL(
+                settings.smtp_host, settings.smtp_port, timeout=timeout, context=context
+            ) as client:
+                _smtp_login_and_send(client, message)
+        else:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=timeout) as client:
+                client.ehlo()
+                if settings.smtp_use_starttls:
+                    client.starttls(context=context)
+                    client.ehlo()
+                _smtp_login_and_send(client, message)
+    except (smtplib.SMTPException, OSError) as exc:
+        # Never include the body: it carries reset and verification tokens.
+        raise EmailDeliveryError(f"SMTP delivery failed: {type(exc).__name__}") from exc
+
+
+def _smtp_login_and_send(client: smtplib.SMTP, message: EmailMessage) -> None:
+    if settings.smtp_username:
+        client.login(settings.smtp_username, settings.smtp_password)
+    client.send_message(message)
+
+
+def active_sender() -> EmailSender | None:
+    """Resolve the transport: an installed sender first, then SMTP if set up."""
     if _sender is not None:
-        _sender(to, subject, body)
-        delivered = "sent"
-    else:
-        delivered = "logged"
+        return _sender
+    if settings.smtp_host:
+        return smtp_sender
+    return None
+
+
+def _deliver(*, to: str, subject: str, body: str, event: str, token: str | None) -> None:
+    """Send the message, and never let a delivery failure break the caller.
+
+    Registration and password-reset endpoints must not 500 because a mail
+    server is down, and password reset must stay non-enumerable. Failures are
+    logged for alerting instead.
+    """
+    sender = active_sender()
+    delivered = "logged"
+    error: str | None = None
+
+    if sender is not None:
+        try:
+            sender(to, subject, body)
+            delivered = "sent"
+        except Exception as exc:  # delivery must never break the request
+            delivered = "failed"
+            error = type(exc).__name__
+            logger.exception("email delivery failed event=%s", event)
 
     payload = {
         "event": event,
@@ -45,7 +116,11 @@ def _deliver(*, to: str, subject: str, body: str, event: str, token: str | None)
         "subject": subject,
         "delivery": delivered,
     }
-    if token and not settings.is_production:
+    if error:
+        payload["error"] = error
+    # Only ever expose the token when nothing could deliver it and we are not
+    # in production, so a local developer can still complete the flow.
+    if token and delivered == "logged" and not settings.is_production:
         payload["dev_token"] = token
     logger.info(json.dumps(payload, separators=(",", ":")))
 

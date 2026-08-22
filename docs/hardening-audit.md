@@ -61,6 +61,15 @@ Last updated: 2026-08-22 (release 1.0.0)
 - Tool policy and approval checks run before execution.
 - Persistent workspace IDs are not an authorization mechanism.
 
+### Client
+- Access tokens are refreshed transparently; a 401 rotates the refresh token
+  once and replays the request, with concurrent 401s sharing one refresh so a
+  replay is never mistaken for token theft.
+- Sign-out revokes the session server side rather than only clearing storage.
+- The client mirrors the server password policy before submitting.
+- Third-party tokens are write-only in the UI; only a masked fingerprint is
+  ever displayed.
+
 ### Transport and observability
 - HSTS, CSP, COOP, CORP, frame denial, nosniff, and a trusted-host allowlist.
 - API documentation is disabled in production.
@@ -86,10 +95,12 @@ These are deliberately listed as open. None is satisfied by code alone.
 ### Blocking public launch
 - [ ] Legal entity, ToS, and Privacy Policy in Bahasa Indonesia; PPN
       registration and e-Faktur. See `docs/legal/compliance-checklist.md`.
-- [ ] Wire a real email transport into `notification_service.set_email_sender`.
-      Verification and reset links are currently logged, not delivered.
-- [ ] Build the user-facing pages: sign in, sign up, billing, documents,
-      integrations, account settings.
+- [x] Email transport. SMTP is built in and selected automatically when
+      `SMTP_HOST` is set; production refuses to boot without it. A hosted
+      provider can still be installed through `set_email_sender`.
+- [x] Integrations UI, so users can actually connect their own credentials.
+- [ ] Remaining user-facing pages: billing/checkout, document management,
+      account settings, and email-verification landing pages.
 - [ ] Provision production credentials through the platform secret store and
       run an end-to-end AI provider smoke test.
 - [ ] Configure production Midtrans and set real Pro/Max prices.

@@ -82,6 +82,7 @@ memory and CPU caps, and a per-workspace bind mount.
 | Tenant isolation | enforced in queries **and** cryptographically in the ciphertext binding |
 | Transport | HSTS, CSP, COOP/CORP, frame denial, trusted-host allowlist |
 | Auditing | append-only `audit_logs` with request correlation IDs |
+| Client sessions | transparent refresh rotation, server-side sign-out, write-only secrets |
 | Logs | credential-shaped strings are redacted before emission |
 | Supply chain | pinned deps, Dependabot, `pip-audit`, `npm audit`, Trivy, gitleaks in CI |
 
@@ -246,8 +247,8 @@ Still open before taking public money — none of these are code problems:
 
 - legal entity, ToS and Privacy Policy in Bahasa Indonesia, PPN handling
   ([`docs/legal/compliance-checklist.md`](docs/legal/compliance-checklist.md))
-- an email transport wired into `app/services/notification_service.py`
-- user-facing pages for auth, billing, documents, and integrations
+- SMTP credentials for a real mailbox (the transport itself is built in)
+- remaining user-facing pages: billing/checkout, documents, account settings
 - recurring card-on-file billing
 - external penetration test and a completed restore drill
 

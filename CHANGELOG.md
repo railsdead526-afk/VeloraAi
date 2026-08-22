@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Built-in SMTP transport for verification and password-reset email, selected
+  automatically when `SMTP_HOST` is set. TLS certificate verification is
+  mandatory; delivery failures are logged and alerted on rather than turning
+  registration into a 500, and a failed send never writes the token to logs.
+  Production now refuses to boot without a transport configured.
+- Integrations panel in the web client: connect, replace, and disconnect
+  provider tokens. Secrets are write-only, shown only as a masked fingerprint.
+
+### Fixed
+
+- **Session expiry regression.** Shortening access tokens to 15 minutes without
+  teaching the client to refresh meant users were signed out every 15 minutes.
+  The client now rotates the refresh token on a 401 and replays the request.
+  Concurrent 401s share a single in-flight refresh, because a replayed refresh
+  token is treated as theft and would revoke every session for the account.
+- Streaming requests refresh the access token before opening the connection; an
+  SSE body cannot be replayed after a mid-stream 401.
+- The registration form enforced an 8-character minimum while the server
+  required 12 plus three character classes, so valid-looking passwords failed
+  with an opaque 422. The client now mirrors and explains the policy.
+- Sign-out only cleared local storage, leaving the refresh session usable. It
+  now calls the logout endpoint to revoke the token server side.
+
 ## [1.0.0] — 2026-08-22
 
 The release that turns the repository from a working prototype into a

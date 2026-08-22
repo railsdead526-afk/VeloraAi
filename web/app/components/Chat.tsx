@@ -1,18 +1,24 @@
 'use client'
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
+
+import IntegrationsPanel from './IntegrationsPanel'
 import {
+  MIN_PASSWORD_LENGTH,
   clearAuthToken,
   createConversation,
+  describePasswordPolicy,
+  ensureFreshToken,
   getAuthToken,
   getCurrentUser,
   getMessages,
   getStreamUrl,
   listConversations,
   login,
+  logout as apiLogout,
   register,
-  setAuthToken,
   subscribeAuthExpired,
+  validatePassword,
   type Conversation,
   type Message,
   type User,
@@ -51,6 +57,7 @@ export default function Chat() {
   const [useRag, setUseRag] = useState(true)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [toolActivity, setToolActivity] = useState('')
+  const [showIntegrations, setShowIntegrations] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -228,11 +235,15 @@ export default function Chat() {
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Access tokens live 15 minutes, so refresh before opening a stream that
+    // may run for a while. apiFetch cannot retry a half-consumed SSE body.
+    const streamToken = (await ensureFreshToken()) ?? getAuthToken()
+
     const response = await fetch(getStreamUrl(conversationId), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAuthToken()}`,
+        Authorization: `Bearer ${streamToken}`,
       },
       body: JSON.stringify({
         content,
@@ -351,12 +362,13 @@ export default function Chat() {
     setError('')
     setAuthLoading(true)
     try {
-      if (authMode === 'login') {
-        setAuthToken((await login(email.trim(), password)).access_token)
-      } else {
+      if (authMode === 'register') {
+        const policyError = validatePassword(password)
+        if (policyError) throw new Error(policyError)
         await register(email.trim(), password)
-        setAuthToken((await login(email.trim(), password)).access_token)
       }
+      // login() stores the access and refresh tokens.
+      await login(email.trim(), password)
       setUser(await getCurrentUser())
       const conversations = await listConversations()
       setChats(conversations)
@@ -368,9 +380,10 @@ export default function Chat() {
     }
   }
 
-  const logout = () => {
+  const handleLogout = async () => {
     abortRef.current?.abort()
-    clearAuthToken()
+    // Revokes the access token's jti and the refresh session server side.
+    await apiLogout()
     setUser(null)
     setChats([])
     setMessages([])
@@ -403,7 +416,8 @@ export default function Chat() {
           <h1 style={styles.title}>{authMode === 'login' ? 'Welcome back' : 'Create your workspace'}</h1>
           <p style={styles.muted}>{authMode === 'login' ? 'Sign in to continue.' : 'Create an account to start using VeloraAi.'}</p>
           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" type="email" autoComplete="email" style={styles.input} required />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={8} />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={authMode === 'register' ? MIN_PASSWORD_LENGTH : 1} />
+          {authMode === 'register' && <p style={styles.muted}>{describePasswordPolicy()}</p>}
           {authError && <div style={styles.error}>{authError}</div>}
           <button type="submit" style={styles.primary}>{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           <button type="button" onClick={() => setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))} style={styles.link}>
@@ -416,6 +430,7 @@ export default function Chat() {
 
   return (
     <main style={styles.app}>
+      {showIntegrations && <IntegrationsPanel onClose={() => setShowIntegrations(false)} />}
       <aside style={styles.sidebar}>
         <div>
           <div style={styles.logo}>VELORAAI</div>
@@ -429,7 +444,8 @@ export default function Chat() {
             </button>
           ))}
         </div>
-        <button onClick={logout} style={styles.link}>Sign out</button>
+        <button onClick={() => setShowIntegrations(true)} style={styles.link}>Integrations</button>
+        <button onClick={() => void handleLogout()} style={styles.link}>Sign out</button>
       </aside>
 
       <section style={styles.main}>

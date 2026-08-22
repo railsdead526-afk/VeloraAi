@@ -85,6 +85,17 @@ class Settings:
     cors_origins = _env_list("CORS_ORIGINS")
     trusted_hosts = _env_list("TRUSTED_HOSTS")
 
+    # Outbound email. When SMTP_HOST is empty, verification and reset links are
+    # logged instead of delivered; production refuses to boot in that state.
+    smtp_host = os.getenv("SMTP_HOST", "")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    smtp_from = os.getenv("SMTP_FROM", "")
+    smtp_use_ssl = _env_bool("SMTP_USE_SSL", False)
+    smtp_use_starttls = _env_bool("SMTP_USE_STARTTLS", True)
+    smtp_timeout_seconds = float(os.getenv("SMTP_TIMEOUT_SECONDS", "15"))
+
     metrics_enabled = _env_bool("METRICS_ENABLED", True)
     metrics_token = os.getenv("METRICS_TOKEN", "")
     sentry_dsn = os.getenv("SENTRY_DSN", "")
@@ -139,6 +150,12 @@ class Settings:
             raise RuntimeError("VAT_PERCENT must be between 0 and 100")
         if self.database_pool_size < 1:
             raise RuntimeError("DATABASE_POOL_SIZE must be greater than zero")
+        if not 1 <= self.smtp_port <= 65535:
+            raise RuntimeError("SMTP_PORT must be a valid port number")
+        if self.smtp_timeout_seconds <= 0:
+            raise RuntimeError("SMTP_TIMEOUT_SECONDS must be greater than zero")
+        if self.smtp_host and self.smtp_use_ssl and self.smtp_use_starttls:
+            raise RuntimeError("SMTP_USE_SSL and SMTP_USE_STARTTLS are mutually exclusive")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
@@ -194,6 +211,15 @@ class Settings:
             if self.metrics_enabled and not self.metrics_token:
                 raise RuntimeError(
                     "METRICS_TOKEN must be set when metrics are enabled in production"
+                )
+            if not self.smtp_host:
+                raise RuntimeError(
+                    "SMTP_HOST must be configured in production; email verification and "
+                    "password reset are unusable without a delivery transport"
+                )
+            if not self.smtp_from and not self.smtp_username:
+                raise RuntimeError(
+                    "SMTP_FROM or SMTP_USERNAME must be set to address outbound mail"
                 )
 
         # Outside production we still refuse a silently-broken crypto config.
