@@ -61,6 +61,15 @@ that require a compromised host or physical access.
   analysis (`ruff`, `mypy`), and secret scanning on every push and pull
   request.
 
+## Secret scanning allowlist
+
+`.gitleaks.toml` extends the default gitleaks ruleset and allowlists a short,
+individually justified list of synthetic literals: the CI signing key, the
+invented passwords in the auth test-suite, and a hash fixture. It deliberately
+does **not** allowlist whole directories such as `tests/`, so a real credential
+committed anywhere still fails the build. Adding an entry requires a comment
+explaining why the value is not a credential.
+
 ## Handling secrets
 
 Secrets belong in the deployment platform's secret store. They must never be

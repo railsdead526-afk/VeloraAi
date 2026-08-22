@@ -47,14 +47,33 @@ WORKDIR /app
 
 COPY --from=builder /wheels /wheels
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools \
-    && pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
     && rm -rf /wheels
 
 COPY app ./app
 COPY alembic ./alembic
 COPY scripts ./scripts
 COPY alembic.ini pyproject.toml docker-entrypoint.sh ./
+
+# A runtime image does not install packages, so pip, setuptools, and wheel are
+# pure attack surface. They also drag in vendored dependencies that are
+# routinely flagged (setuptools CVE-2025-47273, pip's bundled msgpack) even
+# though nothing here imports them. Remove them outright rather than chasing
+# their advisories forever.
+RUN python -m pip uninstall -y pip setuptools wheel 2>/dev/null || true; \
+    rm -rf /usr/local/lib/python3.11/site-packages/pip \
+           /usr/local/lib/python3.11/site-packages/pip-*.dist-info \
+           /usr/local/lib/python3.11/site-packages/setuptools \
+           /usr/local/lib/python3.11/site-packages/setuptools-*.dist-info \
+           /usr/local/lib/python3.11/site-packages/pkg_resources \
+           /usr/local/lib/python3.11/site-packages/wheel \
+           /usr/local/lib/python3.11/site-packages/wheel-*.dist-info \
+           /usr/local/lib/python3.11/ensurepip
+
+# Fail the build here, not in production, if that removal broke an import.
+RUN python -c "import app.main; import scripts.run_maintenance; print('import smoke test ok')" \
+    && python -c "import alembic.config; print('alembic ok')" \
+    && find /app -name '__pycache__' -type d -prune -exec rm -rf {} +
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
     && chmod +x /app/docker-entrypoint.sh \
