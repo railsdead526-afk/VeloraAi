@@ -74,3 +74,27 @@ def test_log_redaction_strips_credentials():
     assert "ghp_" not in redact("token=ghp_abcdefghijklmnopqrstuvwxyz")
     assert "REDACTED" in redact('{"api_key": "sk-abcdefghijklmnop"}')
     assert "REDACTED" in redact("Authorization: Bearer abcdefghijklmnopqrst")
+
+
+def test_credential_encryption_check_reports_a_round_trip_mismatch(monkeypatch):
+    """The self-test must be a real comparison.
+
+    It used to be an `assert`, which `python -O` strips — silently disabling
+    the check in an optimised runtime.
+    """
+
+    class BrokenBox:
+        keys = (b"x" * 32,)
+
+        def encrypt(self, value, associated_data=None):
+            return "ciphertext"
+
+        def decrypt(self, token, associated_data=None):
+            return "something-else"
+
+    monkeypatch.setattr("app.core.crypto.get_secret_box", lambda: BrokenBox())
+    monkeypatch.setattr(settings, "credential_encryption_keys", "configured")
+
+    from app.api.v1.system import _check_credential_encryption
+
+    assert _check_credential_encryption()["status"] == "error"

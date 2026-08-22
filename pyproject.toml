@@ -24,14 +24,13 @@ select = [
 ignore = [
     "E501",   # line length is handled by the formatter
     "B008",   # FastAPI Depends() in defaults is the documented pattern
-    "S101",   # asserts are fine in tests
     "SIM105",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B011"]
 "scripts/**" = ["S603", "S607"]
-"app/api/v1/system.py" = ["S110", "B017"]
+"app/api/v1/system.py" = ["S110"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "scripts", "tests"]

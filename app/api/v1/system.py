@@ -89,7 +89,10 @@ def _check_credential_encryption() -> dict[str, Any]:
 
         box = get_secret_box()
         probe = box.encrypt("readiness-probe", associated_data="readiness")
-        assert box.decrypt(probe, associated_data="readiness") == "readiness-probe"
+        # A real comparison, not an assert: asserts are stripped under
+        # `python -O`, which would silently disable this self-test.
+        if box.decrypt(probe, associated_data="readiness") != "readiness-probe":
+            return {"status": "error", "detail": "encryption round-trip mismatch"}
         return {"status": "ok", "keys": len(box.keys)}
     except Exception as exc:
         return {"status": "error", "detail": type(exc).__name__}
