@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from contextvars import ContextVar
 from uuid import uuid4
 
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 logger = logging.getLogger("veloraai.request")
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 def new_request_id() -> str:
@@ -15,7 +17,8 @@ def new_request_id() -> str:
 
 
 def set_request_id(request_id: str | None = None) -> str:
-    value = request_id or new_request_id()
+    candidate = request_id.strip() if request_id else ""
+    value = candidate if _REQUEST_ID_RE.fullmatch(candidate) else new_request_id()
     request_id_var.set(value)
     return value
 
