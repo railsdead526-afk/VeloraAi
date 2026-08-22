@@ -6,15 +6,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && useradd --create-home --shell /usr/sbin/nologin sandbox
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
-RUN mkdir -p /var/lib/velora-sandbox \
-    && chown -R sandbox:sandbox /app /var/lib/velora-sandbox
 
-USER sandbox
 EXPOSE 8080
 
+# This service is a privileged controller. Run it only on a dedicated
+# sandbox host, never on the main VeloraAi application host.
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
