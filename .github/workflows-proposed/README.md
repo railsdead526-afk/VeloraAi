@@ -8,11 +8,17 @@ updates a workflow file is rejected by GitHub.
 ## Apply it
 
 ```bash
+git fetch origin                       # required: the branch may not exist locally yet
+git checkout arena/01a0295a-veloraai   # only from a clean tree; see the guide otherwise
+
 git mv .github/workflows-proposed/ci.yml .github/workflows/ci.yml
-rmdir .github/workflows-proposed 2>/dev/null || true
+git rm .github/workflows-proposed/README.md
 git commit -m "ci: apply hardened pipeline"
-git push
+git push origin arena/01a0295a-veloraai
 ```
+
+If your checkout has uncommitted changes, do **not** force the checkout. Use the
+`git worktree` route in the guide below, which leaves your working tree alone.
 
 Do this from a normal local checkout, or edit the file through the GitHub web UI.
 Both routes, with verification steps, are written out in

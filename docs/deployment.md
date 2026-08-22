@@ -31,12 +31,33 @@ The replacement is already in the repository at
 5. Delete `.github/workflows-proposed/` (open each file → **Delete file** →
    commit).
 
-### Option B — command line
+### Option B — a separate worktree (safe with uncommitted work)
+
+Use this when your checkout has local changes. It never touches your current
+working tree or branch.
+
+```bash
+cd ~/VeloraAi
+git fetch origin                       # without this, the branch does not exist locally
+
+git worktree add /tmp/velora-ci arena/01a0295a-veloraai
+cd /tmp/velora-ci
+
+git mv .github/workflows-proposed/ci.yml .github/workflows/ci.yml
+git rm .github/workflows-proposed/README.md
+git commit -m "ci: apply hardened pipeline"
+git push origin HEAD:arena/01a0295a-veloraai
+
+cd ~/VeloraAi
+git worktree remove /tmp/velora-ci
+```
+
+### Option C — switch branches (clean checkout only)
 
 ```bash
 git fetch origin
+git status                             # must report a clean tree first
 git checkout arena/01a0295a-veloraai
-git pull
 
 git mv .github/workflows-proposed/ci.yml .github/workflows/ci.yml
 git rm .github/workflows-proposed/README.md
@@ -44,11 +65,30 @@ git commit -m "ci: apply hardened pipeline"
 git push origin arena/01a0295a-veloraai
 ```
 
-This works from any normal checkout, including Termux, because your own
-credentials carry the `workflow` scope that the automation lacked.
+If `git status` shows modified files, commit or stash them on your current
+branch first. `git checkout` refuses to discard uncommitted work, and forcing
+it with `-f` throws that work away permanently.
 
-> If you use a personal access token, it needs the `workflow` scope. A
-> classic token without it will fail with the same rejection message.
+```bash
+git stash push -u -m "wip before CI switch"
+# ... do the work above, then:
+git checkout <your-branch> && git stash pop
+```
+
+All routes work from Termux. Your own credentials carry the `workflow` scope
+that the automation lacked.
+
+> A classic personal access token needs the `workflow` scope, or the push is
+> rejected with the same message the automation hit.
+
+### Troubleshooting
+
+| Message | Cause | Fix |
+| --- | --- | --- |
+| `pathspec 'arena/...' did not match any file(s)` | branch not fetched | `git fetch origin` |
+| `Your local changes would be overwritten` | uncommitted work on shared files | commit, stash, or use Option B |
+| `bad source, source=.github/workflows-proposed/ci.yml` | you are on the wrong branch | check `git branch --show-current` |
+| `refusing to allow ... without workflows permission` | token lacks `workflow` scope | regenerate the token with that scope |
 
 ### Verify
 
