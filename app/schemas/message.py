@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class MessageCreate(BaseModel):
@@ -9,7 +9,8 @@ class MessageCreate(BaseModel):
     tool_confirmation_token: str | None = None
     use_rag: bool = True
 
-    @validator("content")
+    @field_validator("content")
+    @classmethod
     def content_must_not_be_blank(cls, value: str) -> str:
         value = value.strip()
         if not value:
@@ -18,15 +19,13 @@ class MessageCreate(BaseModel):
 
 
 class MessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     conversation_id: int
     role: str
     content: str
     created_at: datetime
-
-    class Config:
-        orm_mode = True
-        from_attributes = True
 
 
 class ChatReplyResponse(BaseModel):
