@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +10,7 @@ class Settings:
     app_env = os.getenv("APP_ENV", "development").lower()
     app_debug = os.getenv("APP_DEBUG", "false").lower() == "true"
     database_url = os.getenv("DATABASE_URL", "sqlite:///./velora.db")
+    database_schema = os.getenv("DATABASE_SCHEMA", "public")
 
     secret_key = os.getenv("SECRET_KEY", "")
     algorithm = os.getenv("ALGORITHM", "HS256")
@@ -51,6 +53,8 @@ class Settings:
         return self.app_env == "production"
 
     def validate(self) -> None:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", self.database_schema):
+            raise RuntimeError("DATABASE_SCHEMA must be a valid PostgreSQL identifier")
         if self.access_token_expire_minutes < 1:
             raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero")
         if self.ai_max_history_messages < 1:
@@ -71,6 +75,8 @@ class Settings:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
 
         if self.is_production:
+            if self.database_schema == "public":
+                raise RuntimeError("DATABASE_SCHEMA must not be public in production")
             if self.ai_provider == "mock":
                 raise RuntimeError("AI_PROVIDER=mock is only allowed outside production")
             if not self.secret_key or self.secret_key == "change-this-secret-key":
