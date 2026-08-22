@@ -260,6 +260,7 @@ Still open before taking public money — none of these are code problems:
 | [`SECURITY.md`](SECURITY.md) | vulnerability reporting and controls |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | workflow, IP assignment, definition of done |
 | [`docs/deployment.md`](docs/deployment.md) | activation steps and required production variables |
+| [`docs/deploy-railway-supabase-vercel.md`](docs/deploy-railway-supabase-vercel.md) | end-to-end setup for the deployed stack |
 | [`docs/runbook.md`](docs/runbook.md) | on-call procedures |
 | [`docs/hardening-audit.md`](docs/hardening-audit.md) | verified controls and open gates |
 | [`docs/company-readiness-audit.md`](docs/company-readiness-audit.md) | full readiness assessment |
