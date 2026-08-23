@@ -7,10 +7,25 @@ _MAX_COMMAND_LENGTH = 4096
 _MAX_PATH_LENGTH = 512
 _SAFE_PACKAGE = re.compile(r"^[A-Za-z0-9_@./:+-]+$")
 _SAFE_BRANCH = re.compile(r"^[A-Za-z0-9._/-]+$")
+_SAFE_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class TerminalSafetyError(ValueError):
     """Raised when terminal input would escape the intended sandbox contract."""
+
+
+def validate_workspace_id(value: str) -> str:
+    """Reject anything that would not survive being placed in a URL path segment.
+
+    The sandbox client interpolates this straight into the request path, and
+    httpx normalises dot segments, so a value like ``../../v1/admin`` would
+    address a different sandbox endpoint entirely while still carrying the
+    operator's bearer token. ``?`` and ``#`` would likewise truncate the path.
+    """
+    value = value.strip()
+    if not _SAFE_WORKSPACE_ID.fullmatch(value):
+        raise TerminalSafetyError("invalid sandbox workspace id")
+    return value
 
 
 def validate_relative_path(value: str, *, field: str, allow_current: bool = True) -> str:

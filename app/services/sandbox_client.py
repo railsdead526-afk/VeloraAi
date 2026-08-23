@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.tools.providers import ToolProviderError
+from app.tools.terminal_safety import TerminalSafetyError, validate_workspace_id
 
 
 class SandboxClient:
@@ -21,6 +22,14 @@ class SandboxClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
 
+    @staticmethod
+    def _safe_workspace_id(workspace_id: str) -> str:
+        """Last line of defence before the id becomes part of a URL path."""
+        try:
+            return validate_workspace_id(str(workspace_id))
+        except TerminalSafetyError as exc:
+            raise ToolProviderError("Invalid sandbox workspace id") from exc
+
     def create_workspace(self) -> str:
         try:
             response = httpx.post(
@@ -31,11 +40,12 @@ class SandboxClient:
             workspace_id = payload.get("workspace_id")
             if not isinstance(workspace_id, str) or not workspace_id:
                 raise ToolProviderError("Sandbox returned an invalid workspace")
-            return workspace_id
+            return self._safe_workspace_id(workspace_id)
         except (httpx.HTTPError, ValueError) as exc:
             raise ToolProviderError("Sandbox workspace creation failed") from exc
 
     def delete_workspace(self, workspace_id: str) -> None:
+        workspace_id = self._safe_workspace_id(workspace_id)
         try:
             response = httpx.delete(
                 f"{self.base_url}/v1/workspaces/{workspace_id}",
@@ -54,12 +64,15 @@ class SandboxClient:
         cwd: str | None = None,
         timeout: int = 30,
     ) -> dict[str, Any]:
+        workspace_id = self._safe_workspace_id(workspace_id)
+        # A non-positive timeout would otherwise be handed straight to httpx.
+        timeout = max(1, min(int(timeout), 60))
         try:
             response = httpx.post(
                 f"{self.base_url}/v1/workspaces/{workspace_id}/execute",
                 headers=self._headers(),
-                json={"command": command, "cwd": cwd, "timeout": min(timeout, 60)},
-                timeout=min(timeout, 60) + 5,
+                json={"command": command, "cwd": cwd, "timeout": timeout},
+                timeout=timeout + 5,
             )
             response.raise_for_status()
             payload = response.json()
