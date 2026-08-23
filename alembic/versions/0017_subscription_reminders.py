@@ -13,7 +13,7 @@ current period. It is reset to NULL whenever the period is extended.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0017_subscription_reminder_marker"
+revision = "0017_subscription_reminders"
 down_revision = "0016_neutral_checkout_token"
 branch_labels = None
 depends_on = None
