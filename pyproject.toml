@@ -29,6 +29,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B011"]
+# conftest pins the environment before importing the app; that ordering is the
+# whole point, so module-level imports cannot come first.
+"tests/conftest.py" = ["S", "B011", "E402"]
 "scripts/**" = ["S603", "S607"]
 "app/api/v1/system.py" = ["S110"]
 

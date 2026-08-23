@@ -3,7 +3,6 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
-    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -13,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.types import UtcDateTime
 
 
 class Subscription(Base):
@@ -33,25 +33,21 @@ class Subscription(Base):
         String(255), nullable=True, index=True
     )
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
-    current_period_start: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    current_period_start: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
+        UtcDateTime, nullable=True, index=True
     )
     #: End of the post-expiry grace window before the plan is downgraded.
-    grace_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
-    )
+    grace_until: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
-    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    canceled_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UtcDateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        UtcDateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     user = relationship("User", back_populates="subscriptions")
@@ -98,13 +94,13 @@ class Payment(Base):
     refund_amount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     refund_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     refund_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        UtcDateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        UtcDateTime, server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
     user = relationship("User", back_populates="payments")

@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.types import UtcDateTime
 
 
 class User(Base):
@@ -22,23 +23,17 @@ class User(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
 
-    email_verified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    password_changed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    locked_until: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     #: Soft delete. Rows are retained for audit and financial reconciliation.
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=True
+        UtcDateTime, server_default=func.now(), nullable=True
     )
     updated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True
+        UtcDateTime, server_default=func.now(), onupdate=func.now(), nullable=True
     )
 
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete")

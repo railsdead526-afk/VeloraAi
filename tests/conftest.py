@@ -8,6 +8,32 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
+# Pin the test environment BEFORE app.core.config is imported, because it calls
+# load_dotenv() at module scope. Without this, a developer's local .env leaks
+# into the suite and tests pass or fail depending on a file that is not in the
+# repository -- which is exactly what happened: a local PAYMENT_PROVIDER=disabled
+# turned four payment tests red on one machine and green in CI.
+#
+# setdefault, not assignment: an explicit variable on the command line still wins.
+_TEST_ENV = {
+    "APP_ENV": "test",
+    "APP_DEBUG": "false",
+    "DATABASE_URL": "sqlite:///./test.db",
+    "DATABASE_SCHEMA": "public",
+    "SECRET_KEY": "ci-test-secret-key-012345678901234567890123",
+    "AI_PROVIDER": "mock",
+    "PAYMENT_PROVIDER": "midtrans",
+    "RATE_LIMIT_STORAGE_URI": "memory://",
+    "CORS_ORIGINS": "http://localhost:3000",
+    "EMBEDDING_MODEL": "text-embedding-3-small",
+    "EMBEDDING_DIMENSIONS": "1536",
+    "REQUIRE_EMAIL_VERIFICATION": "false",
+    "SMTP_HOST": "",
+    "METRICS_TOKEN": "",
+}
+for _key, _value in _TEST_ENV.items():
+    os.environ.setdefault(_key, _value)
+
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter

@@ -45,12 +45,6 @@ class SweepResult:
         return asdict(self)
 
 
-def _as_aware(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
 def sweep_subscriptions(db: Session, *, now: datetime | None = None) -> SweepResult:
     moment = now or datetime.now(UTC)
     result = SweepResult()
@@ -63,8 +57,8 @@ def sweep_subscriptions(db: Session, *, now: datetime | None = None) -> SweepRes
     )
 
     for subscription in subscriptions:
-        period_end = _as_aware(subscription.current_period_end)
-        grace_until = _as_aware(subscription.grace_until)
+        period_end = subscription.current_period_end
+        grace_until = subscription.grace_until
 
         # Legacy rows written before periods existed: backfill instead of
         # granting an unbounded entitlement.

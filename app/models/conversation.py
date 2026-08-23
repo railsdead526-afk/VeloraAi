@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.types import UtcDateTime
 
 
 class Conversation(Base):
@@ -16,9 +17,7 @@ class Conversation(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime | None] = mapped_column(UtcDateTime, server_default=func.now())
 
     user = relationship("User", back_populates="conversations")
     messages = relationship(

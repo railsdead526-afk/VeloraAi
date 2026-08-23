@@ -14,13 +14,6 @@ TERMINAL_PAYMENT_STATUSES = {"settlement", "refunded"}
 PLAN_PRIORITY = {"free": 0, "pro": 1, "max": 2}
 
 
-def _as_aware(value: datetime | None) -> datetime | None:
-    """SQLite returns naive datetimes; normalise before comparing."""
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
 def tax_component(gross_amount: int) -> int:
     """VAT/PPN already included inside a tax-inclusive gross amount."""
     rate = settings.vat_percent
@@ -93,7 +86,7 @@ def sync_user_role(db: Session, *, user_id: int) -> None:
 
     entitled_plans = []
     for subscription in subscriptions:
-        boundary = _as_aware(subscription.grace_until) or _as_aware(subscription.current_period_end)
+        boundary = subscription.grace_until or subscription.current_period_end
         # A subscription with no recorded period is legacy data; honour it.
         if boundary is None or boundary > now:
             entitled_plans.append(subscription.plan)
@@ -186,11 +179,11 @@ def apply_payment_notification(
         else:
             # Extend from the later of "now" and the current period end, so a
             # renewal paid early does not silently forfeit remaining days.
-            current_end = _as_aware(subscription.current_period_end)
+            current_end = subscription.current_period_end
             anchor = current_end if current_end and current_end > now else now
             subscription.plan = payment.plan
             subscription.status = "active"
-            subscription.current_period_start = _as_aware(subscription.current_period_start) or now
+            subscription.current_period_start = subscription.current_period_start or now
             subscription.current_period_end = anchor + period
             subscription.grace_until = anchor + period + grace
             subscription.canceled_at = None

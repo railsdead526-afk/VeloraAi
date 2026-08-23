@@ -34,13 +34,6 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _as_aware(value: datetime | None) -> datetime | None:
-    """SQLite hands back naive datetimes; normalise before comparing."""
-    if value is None:
-        return None
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
 def _pepper(value: str) -> str:
     """Salted digest for privacy-sensitive identifiers (email, IP)."""
     return hashlib.sha256(f"{settings.secret_key}|{value.lower().strip()}".encode()).hexdigest()
@@ -109,7 +102,7 @@ def get_active_refresh_token(db: Session, token: str) -> RefreshToken | None:
         return None
     if record.revoked_at is not None:
         return None
-    if (_as_aware(record.expires_at) or _now()) <= _now():
+    if (record.expires_at or _now()) <= _now():
         return None
     return record
 
@@ -139,7 +132,7 @@ def rotate_refresh_token(
         revoke_all_sessions(db, user_id=record.user_id, reason="reuse_detected")
         return None
 
-    if (_as_aware(record.expires_at) or _now()) <= _now():
+    if (record.expires_at or _now()) <= _now():
         return None
 
     user = db.get(User, record.user_id)
@@ -305,7 +298,7 @@ def consume_verification_token(db: Session, *, token: str, purpose: str) -> User
 
     if record is None or record.used_at is not None:
         return None
-    if (_as_aware(record.expires_at) or _now()) <= _now():
+    if (record.expires_at or _now()) <= _now():
         return None
 
     user = db.get(User, record.user_id)

@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.types import UtcDateTime
 
 
 class AuditLog(Base):
@@ -20,5 +21,5 @@ class AuditLog(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="success")
     metadata_json: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+        UtcDateTime, server_default=func.now(), nullable=False, index=True
     )

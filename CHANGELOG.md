@@ -8,6 +8,40 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Timestamps behaved differently on SQLite and PostgreSQL.** PostgreSQL
+  returns `timestamptz` as aware; SQLite drops the offset and returns naive,
+  and comparing the two raises `TypeError`. Three services had each grown a
+  private `_as_aware()` helper to patch it at the call site — a rule every
+  future reader had to remember, where forgetting means a crash. A `UtcDateTime`
+  column type now guarantees aware values on read across all 46 timestamp
+  columns, and rejects naive values on write rather than guessing an offset.
+  All three helpers are gone.
+- **`terminal_git_commit` timed out before the sandbox it waits on.** Its 60s
+  budget exactly equalled the sandbox execution cap, while the client adds 5s
+  for the round trip — so a commit that took the full minute was reported to
+  the user as a failure despite having succeeded. Every sibling tool already
+  used 65s; this one was the outlier.
+- **The test suite was not hermetic.** `app.core.config` calls `load_dotenv()`
+  at import, so a developer's local `.env` changed test results: a local
+  `PAYMENT_PROVIDER=disabled` turned four payment tests red on one machine and
+  green in CI. `conftest` now pins the test environment before the app is
+  imported.
+
+### Security
+
+- **Tool risk classification was declared but never used.** All 55 registered
+  tools carried the default `ToolRisk.LOW`, so `policy.requires_approval`'s
+  risk branch was dead and protection rested entirely on remembering
+  `requires_confirmation=True` per tool. Tools are now classified (18 WRITE,
+  3 DESTRUCTIVE), and a fail-closed test refuses any tool that can act without
+  approval unless it is explicitly declared read-only. Adding a tool now forces
+  a decision instead of inheriting a permissive default.
+- `supabase_execute_sql` and `supabase_query_sql` lost their classification
+  because `harden_supabase_sql_registry` replaces the definitions; both now
+  carry an explicit risk level.
+
+### Fixed
+
 - The container hardcoded `--workers 2`. Measured against a running instance
   each worker holds about 110 MB, so on a 512 MB host — the entry tier of most
   providers — two workers plus the OS is close enough to the limit to invite an

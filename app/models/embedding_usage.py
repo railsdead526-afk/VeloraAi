@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.models.types import UtcDateTime
 
 
 class EmbeddingUsage(Base):
@@ -25,5 +26,5 @@ class EmbeddingUsage(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
     error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+        UtcDateTime, server_default=func.now(), nullable=False, index=True
     )
