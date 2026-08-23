@@ -94,16 +94,23 @@ def sweep_subscriptions(db: Session, *, now: datetime | None = None) -> SweepRes
             result.marked_past_due += 1
             continue
 
-        # 3. Renewal reminder.
+        # 3. Renewal reminder. The sweep runs hourly, so a naive
+        # `days_left in REMINDER_DAYS` fires 24 times per milestone. Only send
+        # when this milestone is closer than the last one already sent.
         if subscription.status == "active":
             days_left = (period_end - moment).days
-            if days_left in REMINDER_DAYS:
+            already_sent = subscription.last_reminder_days_left
+            due = days_left in REMINDER_DAYS and (already_sent is None or days_left < already_sent)
+            if due:
                 user = db.get(User, subscription.user_id)
                 if user is not None and not user.is_deleted:
                     send_subscription_expiring_email(
                         email=user.email, plan=subscription.plan, days_left=days_left
                     )
                     result.reminders_sent += 1
+                # Recorded even when the user has gone, so a deleted account
+                # cannot make the sweep retry every hour.
+                subscription.last_reminder_days_left = days_left
 
     for user_id in touched_users:
         sync_user_role(db, user_id=user_id)

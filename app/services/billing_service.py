@@ -209,6 +209,7 @@ def apply_payment_notification(
                 current_period_start=now,
                 current_period_end=now + period,
                 grace_until=now + period + grace,
+                last_reminder_days_left=None,
             )
             db.add(subscription)
             db.flush()
@@ -223,6 +224,8 @@ def apply_payment_notification(
             subscription.current_period_end = anchor + period
             subscription.grace_until = anchor + period + grace
             subscription.canceled_at = None
+            # A new period earns a fresh set of reminders.
+            subscription.last_reminder_days_left = None
 
         payment.subscription_id = subscription.id
         sync_user_role(db, user_id=payment.user_id)

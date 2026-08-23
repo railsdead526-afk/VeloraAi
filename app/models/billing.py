@@ -39,6 +39,11 @@ class Subscription(Base):
     )
     #: End of the post-expiry grace window before the plan is downgraded.
     grace_until: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True, index=True)
+    #: Smallest "days left" value already emailed for the current period.
+    #: The sweep runs hourly, so without this marker every reminder went out
+    #: once per hour for a whole day - 24 identical emails per milestone.
+    #: Reset to NULL whenever the period is extended.
+    last_reminder_days_left: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cancel_at_period_end: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
