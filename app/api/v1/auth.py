@@ -25,6 +25,7 @@ from app.core.security import (
     needs_rehash,
     new_jti,
     verify_password,
+    verify_password_dummy,
 )
 from app.crud.user import create_user, get_user_by_email
 from app.schemas.token import LogoutRequest, RefreshRequest, Token
@@ -135,7 +136,13 @@ def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     user = get_user_by_email(db, user_in.email)
-    password_ok = user is not None and verify_password(user_in.password, user.hashed_password)
+    if user is None:
+        # Burn the same Argon2 work as a real verification. Short-circuiting
+        # here made an unregistered address answer in 9 ms against 114 ms for a
+        # registered one, which is an account-enumeration oracle.
+        password_ok = verify_password_dummy(user_in.password)
+    else:
+        password_ok = verify_password(user_in.password, user.hashed_password)
 
     if not user or not password_ok or not user.is_active or user.is_deleted:
         record_login_attempt(db, email=user_in.email, ip=ip, successful=False)

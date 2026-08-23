@@ -9,7 +9,7 @@ from collections.abc import Iterable
 import httpx
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
 from app.core.config import settings
 from app.models.document import EMBEDDING_DIMENSIONS, Document, DocumentChunk
@@ -265,6 +265,10 @@ def _vector_candidates(
     statement = (
         select(DocumentChunk, distance.label("distance"))
         .join(DocumentChunk.document)
+        # build_context reads chunk.document.name for every hit. Without this the
+        # join is discarded and each chunk triggers its own SELECT, on the hot
+        # path of every RAG-backed chat message.
+        .options(contains_eager(DocumentChunk.document))
         .where(
             Document.user_id == user_id,
             Document.status == "ready",
@@ -286,6 +290,7 @@ def _keyword_candidates(
     statement = (
         select(DocumentChunk)
         .join(DocumentChunk.document)
+        .options(contains_eager(DocumentChunk.document))
         .where(Document.user_id == user_id, Document.status == "ready", or_(*conditions))
         .limit(candidate_limit * 2)
     )

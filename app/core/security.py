@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from uuid import uuid4
 
@@ -86,6 +87,28 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return _hasher.verify(hashed_password, plain_password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
+
+
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    """A hash of an unguessable value, computed once per process."""
+    return _hasher.hash(secrets.token_urlsafe(32))
+
+
+def verify_password_dummy(plain_password: str) -> bool:
+    """Spend the same work as a real verification, and always fail.
+
+    Argon2 is deliberately expensive - measured at roughly 90 ms here. Skipping
+    it when no account matches made an unknown address answer in 9 ms and a
+    known one in 114 ms, so a single request revealed whether an email was
+    registered. Callers must run this on the account-not-found branch so both
+    outcomes cost the same.
+    """
+    try:
+        _hasher.verify(_dummy_hash(), plain_password or "")
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
+    return False
 
 
 def needs_rehash(hashed_password: str) -> bool:
