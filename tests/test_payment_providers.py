@@ -191,7 +191,7 @@ def test_checkout_runs_through_the_active_provider(fake_provider):
     assert body["redirect_url"].startswith("https://fakepay.test/checkout/")
     assert body["amount"] == 19900
     # A tokenless gateway must not break the response contract.
-    assert body["snap_token"] == ""
+    assert body["checkout_token"] is None
 
 
 def test_payment_is_recorded_against_the_active_provider(fake_provider, db):

@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
@@ -19,7 +17,6 @@ from app.services.billing_service import (
 from app.services.payments import PaymentOutcome, PaymentProviderError, get_provider
 
 router = APIRouter(prefix="/payments", tags=["payments"])
-CHECKOUT_FILE = Path(__file__).resolve().parents[2] / "static" / "checkout.html"
 
 
 def _plan_amount(plan: str) -> int:
@@ -31,11 +28,6 @@ def _plan_amount(plan: str) -> int:
     return amount
 
 
-@router.get("/checkout", include_in_schema=False)
-def checkout_page():
-    return FileResponse(CHECKOUT_FILE)
-
-
 @router.get("/config")
 def payment_config(current_user=Depends(get_current_user)):
     """Non-secret settings the checkout UI needs, shaped by the active provider."""
@@ -45,25 +37,6 @@ def payment_config(current_user=Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
-
-
-@router.get("/snap-script.js", include_in_schema=False)
-def snap_script():
-    client_key = settings.midtrans_client_key
-    if not client_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Payment client is not configured",
-        )
-    origin = (
-        "https://app.midtrans.com"
-        if settings.midtrans_is_production
-        else "https://app.sandbox.midtrans.com"
-    )
-    body = f'document.write(\'<script src=\\"{origin}/snap/snap.js\\" data-client-key=\\"{client_key}\\"><\\/script>\');'
-    return Response(
-        content=body, media_type="application/javascript", headers={"Cache-Control": "no-store"}
-    )
 
 
 @router.post("/create", response_model=PaymentCreateResponse)
@@ -93,13 +66,13 @@ def create_payment(
     except PaymentProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    payment.snap_token = session.token
+    payment.checkout_token = session.token
     db.commit()
     return PaymentCreateResponse(
         order_id=session.order_id,
         amount=session.amount,
         currency=session.currency,
-        snap_token=session.token or "",
+        checkout_token=session.token,
         redirect_url=session.redirect_url,
     )
 

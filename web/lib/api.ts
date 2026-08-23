@@ -462,7 +462,7 @@ export interface PaymentIntent {
   order_id: string
   amount: number
   currency: string
-  snap_token: string
+  checkout_token: string | null
   redirect_url: string
 }
 

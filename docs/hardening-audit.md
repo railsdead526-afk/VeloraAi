@@ -32,6 +32,15 @@ Last updated: 2026-08-22 (release 1.0.0)
 - Verification and reset tokens are single use and expiring.
 - Account deletion is a soft delete that preserves financial and audit records.
 
+### Cost control
+- Every non-admin plan bounds embedding spend and stored document count.
+  Indexing is refused before the provider is called, not after.
+- Re-indexing consumes embedding budget like a first index, because it makes
+  the same provider calls, but is not refused by the document count.
+- The token estimate is deliberately conservative, so the ceiling is not
+  overshot by an under-count.
+- List endpoints are paginated with an enforced maximum page size.
+
 ### Billing
 - Webhook signatures are verified in constant time, then re-verified against
   the provider API before any state change.

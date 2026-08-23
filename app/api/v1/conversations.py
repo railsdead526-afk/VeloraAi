@@ -1,9 +1,4 @@
-import asyncio
-import json
-from typing import Any
-
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -23,10 +18,9 @@ from app.crud.message import create_message, get_messages_by_conversation
 from app.models.document import Document
 from app.schemas.conversation import ConversationCreate, ConversationResponse, ConversationUpdate
 from app.schemas.message import ChatReplyResponse, MessageCreate, MessageResponse
-from app.services.ai_service import generate_ai_reply_from_history, stream_ai_reply_from_history
+from app.services.ai_service import generate_ai_reply_from_history
 from app.services.ai_tool_loop import (
     generate_ai_reply_with_tools,
-    generate_ai_reply_with_tools_async,
 )
 from app.services.quota_service import QuotaExceededError, enforce_plan_quota
 from app.services.rag_service import RAGError, build_context, retrieve_chunks
@@ -110,8 +104,17 @@ def get_conversation_detail(
 
 
 @router.get("", response_model=list[ConversationResponse])
-def list_my_conversations(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    return get_user_conversations(db, current_user.id)
+def list_my_conversations(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """The CRUD layer always accepted limit/offset, but the endpoint never
+    exposed them, so anything past the newest 50 conversations was
+    permanently unreachable.
+    """
+    return get_user_conversations(db, current_user.id, limit=limit, offset=offset)
 
 
 @router.patch("/{conversation_id}", response_model=ConversationResponse)
@@ -239,127 +242,3 @@ def send_message(
         ) from exc
 
     return {"user_message": user_message, "assistant_message": assistant_message}
-
-
-@router.post("/{conversation_id}/messages/stream")
-@limiter.limit(settings.rate_limit_chat)
-def stream_message(
-    request: Request,
-    conversation_id: int,
-    payload: MessageCreate,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    conversation = get_conversation_by_id(db, conversation_id)
-    if not conversation or conversation.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-
-    enforce_user_plan_quota(db, current_user)
-    user_message = create_message(
-        db, conversation_id=conversation_id, role="user", content=payload.content, commit=False
-    )
-    history = get_messages_by_conversation(db, conversation_id)
-    history_payload = [{"role": message.role, "content": message.content} for message in history]
-    history_payload = _history_with_rag_context(
-        db,
-        user_id=current_user.id,
-        history_payload=history_payload,
-        query=payload.content,
-        use_rag=payload.use_rag,
-    )
-    usage: dict[str, Any] = {}
-    user_id = current_user.id
-
-    async def event_stream():
-        chunks: list[str] = []
-        try:
-            if settings.ai_provider in {"openai", "llama"}:
-                with user_credential_scope(user_id):
-                    ai_result = await generate_ai_reply_with_tools_async(
-                        history_payload,
-                        plan=getattr(current_user, "role", "free"),
-                        confirmed=payload.confirm_tools,
-                        registry=get_registry(),
-                    )
-                usage.update(
-                    {
-                        "input_tokens": ai_result.input_tokens,
-                        "output_tokens": ai_result.output_tokens,
-                        "model": ai_result.model,
-                    }
-                )
-                for chunk in ai_result.content.split(" "):
-                    chunks.append(chunk)
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk + ' '}, ensure_ascii=False)}\n\n"
-            else:
-                async for chunk in stream_ai_reply_from_history(history_payload, usage):
-                    chunks.append(chunk)
-                    yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
-
-            assistant_reply = "".join(chunks).strip()
-            if not assistant_reply:
-                raise RuntimeError("AI provider returned an empty response")
-            raw_input_tokens = usage.get("input_tokens")
-            raw_output_tokens = usage.get("output_tokens")
-            raw_model = usage.get("model")
-            if raw_input_tokens is None or raw_output_tokens is None or not raw_model:
-                raise RuntimeError("AI provider did not return token usage")
-            # The usage dict is filled from provider responses, so coerce rather
-            # than trust: a provider returning a string token count would
-            # otherwise be written straight into the billing tables.
-            try:
-                input_tokens = int(raw_input_tokens)
-                output_tokens = int(raw_output_tokens)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError("AI provider returned a non-numeric token count") from exc
-            model = str(raw_model)
-
-            assistant_message = create_message(
-                db,
-                conversation_id=conversation_id,
-                role="assistant",
-                content=assistant_reply,
-                commit=False,
-            )
-            record_ai_usage(
-                db,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                provider="mock" if model == "mock" else settings.ai_provider,
-                model=model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                commit=False,
-            )
-            enforce_user_plan_quota(
-                db,
-                current_user,
-                additional_tokens=int(input_tokens) + int(output_tokens),
-            )
-            db.commit()
-            db.refresh(user_message)
-            db.refresh(assistant_message)
-            yield f"data: {json.dumps({'type': 'done', 'message_id': assistant_message.id}, ensure_ascii=False)}\n\n"
-        except asyncio.CancelledError:
-            db.rollback()
-            raise
-        except RuntimeError as exc:
-            db.rollback()
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
-        except HTTPException as exc:
-            db.rollback()
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc.detail)}, ensure_ascii=False)}\n\n"
-        except Exception:
-            db.rollback()
-            yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )

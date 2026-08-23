@@ -79,7 +79,9 @@ class Payment(Base):
     provider_transaction_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, index=True
     )
-    snap_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    #: Opaque handle for a provider's embedded checkout widget, when it has
+    #: one. Null for gateways that only offer a hosted redirect.
+    checkout_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="IDR")
     plan: Mapped[str] = mapped_column(String(20), nullable=False)

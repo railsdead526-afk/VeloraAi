@@ -6,7 +6,41 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Embedding spend had no ceiling.** Usage was written to `embedding_usage`
+  and never read back, no plan carried an embedding limit, and there was no cap
+  on stored documents. A Free account could index without bound; only a
+  30/minute rate limit stood between one user and an unbounded provider bill,
+  and `/documents/{id}/reindex` was not even rate limited. Plans now carry
+  `monthly_embedding_token_limit` and `max_documents`, enforced before any
+  provider call on create, upload, and reindex. Same failure as the
+  subscription leak: a cost measured but never acted upon.
+
+### Fixed
+
+- **`POST /conversations/{id}/messages/stream` was registered twice.** The
+  handler in `conversations.py` was unreachable — `agent_stream` wins by
+  registration order — yet 122 lines of it were still maintained, tested, and
+  audited. A conftest shim aliased the two modules so tests patching the dead
+  one appeared to work, which hid which handler actually ran. Both removed.
+- `GET /conversations` never exposed the `limit`/`offset` its CRUD layer
+  always supported, so anything past the newest 50 conversations was
+  permanently unreachable.
+- `GET /rag/documents` returned every document with no pagination.
+
+### Removed
+
+- The static Midtrans Snap checkout page (`app/static/`) and the
+  `/payments/snap-script.js` endpoint. Unreferenced by the web client, and
+  hardcoding one gateway's widget contradicts the provider abstraction.
+
 ### Changed
+
+- `payments.snap_token` renamed to `checkout_token` (migration
+  `0016_neutral_checkout_token`). "Snap" is Midtrans's name for its widget;
+  with payments behind an abstraction, a vendor's vocabulary should not be in
+  the schema or the public API.
 
 - **Payments are provider-agnostic.** Midtrans was wired into the API layer and
   into `billing_service`, where `PAID_STATUSES = {"settlement", "capture"}`

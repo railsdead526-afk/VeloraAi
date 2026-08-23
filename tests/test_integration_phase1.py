@@ -139,10 +139,13 @@ def test_streaming_failure_is_atomic():
         yield "partial"
         raise RuntimeError("stream provider unavailable")
 
+    # /messages/stream is served by agent_stream, so that is the module whose
+    # name must be patched. A conftest shim used to paper over this by aliasing
+    # the two; it hid which handler actually ran.
     with (
-        patch("app.api.v1.conversations.settings.ai_provider", "mock"),
+        patch("app.api.v1.agent_stream.settings.ai_provider", "mock"),
         patch(
-            "app.api.v1.conversations.stream_ai_reply_from_history",
+            "app.api.v1.agent_stream.stream_ai_reply_from_history",
             side_effect=fail_stream,
         ),
     ):

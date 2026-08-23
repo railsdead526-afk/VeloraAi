@@ -17,6 +17,8 @@ def _policy(daily: int = 1, monthly: int = 10) -> PlanPolicy:
         monthly_token_limit=100_000,
         monthly_request_limit=monthly,
         daily_request_limit=daily,
+        monthly_embedding_token_limit=None,
+        max_documents=None,
     )
 
 

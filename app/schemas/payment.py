@@ -9,5 +9,5 @@ class PaymentCreateResponse(BaseModel):
     order_id: str
     amount: int
     currency: str
-    snap_token: str
+    checkout_token: str | None = None
     redirect_url: str

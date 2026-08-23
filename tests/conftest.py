@@ -8,7 +8,6 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from app.api.v1 import agent_stream, conversations
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter
@@ -31,16 +30,6 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
 
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# The canonical /messages/stream route now lives in agent_stream.py. Keep the
-# legacy integration tests' monkeypatch target effective while they are
-# migrated to patch agent_stream directly. This is test-only compatibility.
-def _legacy_stream_patch_bridge(*args, **kwargs):
-    return conversations.stream_ai_reply_from_history(*args, **kwargs)
-
-
-agent_stream.stream_ai_reply_from_history = _legacy_stream_patch_bridge
 
 
 @pytest.fixture(autouse=True)
