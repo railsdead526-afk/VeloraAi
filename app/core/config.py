@@ -195,10 +195,14 @@ class Settings:
                 raise RuntimeError("TRUSTED_HOSTS must be configured in production")
             if "*" in self.trusted_hosts:
                 raise RuntimeError("TRUSTED_HOSTS must not use * in production")
-            if not self.midtrans_server_key or not self.midtrans_client_key:
-                raise RuntimeError("Midtrans credentials must be configured in production")
-            if self.pro_price_idr <= 0 or self.max_price_idr <= 0:
-                raise RuntimeError("Pro and Max prices must be configured in production")
+            # A deployment that sells nothing needs no gateway and no prices.
+            # PAYMENT_PROVIDER=disabled makes that an explicit choice rather
+            # than the accident of leaving credentials blank.
+            if self.payment_provider == "midtrans":
+                if not self.midtrans_server_key or not self.midtrans_client_key:
+                    raise RuntimeError("Midtrans credentials must be configured in production")
+                if self.pro_price_idr <= 0 or self.max_price_idr <= 0:
+                    raise RuntimeError("Pro and Max prices must be configured in production")
             if not self.credential_encryption_keys:
                 raise RuntimeError(
                     "CREDENTIAL_ENCRYPTION_KEYS must be configured in production; "

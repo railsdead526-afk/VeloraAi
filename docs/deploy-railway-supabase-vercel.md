@@ -74,9 +74,7 @@ python -m scripts.generate_keys
 | `FRONTEND_BASE_URL` | your Vercel URL |
 | `REQUIRE_EMAIL_VERIFICATION` | `true` |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | your mail provider |
-| `MIDTRANS_SERVER_KEY` / `MIDTRANS_CLIENT_KEY` | see §5 |
-| `MIDTRANS_IS_PRODUCTION` | `false` until you have gone live |
-| `PRO_PRICE_IDR` / `MAX_PRICE_IDR` | your prices, both > 0 |
+| `PAYMENT_PROVIDER` | `disabled` until you are ready to sell (see §5) |
 | `VAT_PERCENT` | `12` once registered as PKP, else `0` |
 | `APP_VERSION` / `GIT_SHA` | optional, shown at `/api/v1/info` |
 
@@ -143,7 +141,29 @@ string exactly.
 
 ---
 
-## 5. Midtrans
+## 5. Payments — skip this until you are ready to sell
+
+Deploy with `PAYMENT_PROVIDER=disabled`. Production then skips the gateway and
+pricing checks, `/api/v1/payments/config` reports `enabled: false` so the UI can
+show an honest "upgrades unavailable" state, and every user stays on Free.
+
+This is deliberately an explicit setting rather than "leave the credentials
+blank": blank credentials plus zero prices is how a system ends up granting paid
+plans for free.
+
+### When you are ready
+
+You do **not** need a PT. Tripay and iPaymu register individuals with a KTP;
+Midtrans accepts a KTP plus a personal bank account and has a product,
+Midtrans GO, aimed at unincorporated businesses. Since NIK now doubles as a
+personal NPWP, the tax-number requirement is usually already met.
+
+If your Midtrans account is tied to another site, one account may serve several
+websites only within the same domain and business scope. Otherwise use the
+Partner dashboard's **+ Add merchant** to create a second merchant with its own
+keys, or register with another gateway.
+
+Then set `PAYMENT_PROVIDER=midtrans`, the credentials, and non-zero prices.
 
 **Dashboard → Settings → Access Keys**, with the environment toggle set to
 **Sandbox**. Copy the Server Key (`SB-Mid-server-...`) and Client Key

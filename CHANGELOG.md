@@ -15,7 +15,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and map their own vocabulary to a canonical `PaymentOutcome` at the boundary.
   Adding Xendit, Duitku, or Google Play Billing is one adapter; the subscription
   lifecycle does not change. See `docs/adr/0004-payment-provider-abstraction.md`.
-- `PAYMENT_PROVIDER` selects the gateway for web checkout.
+- `PAYMENT_PROVIDER` selects the gateway for web checkout, and accepts
+  `disabled` for deployments that are not selling yet. Production then skips
+  the gateway and pricing gates rather than refusing to boot, and
+  `/payments/config` reports `enabled: false` so the UI can show an honest
+  "upgrades unavailable" state. Blank credentials plus zero prices — the
+  alternative — is how a system ends up granting paid plans for free.
 
 ### Fixed
 

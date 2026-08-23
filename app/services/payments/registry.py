@@ -6,13 +6,20 @@ from collections.abc import Callable
 
 from app.core.config import settings
 from app.services.payments.base import PaymentProvider, PaymentProviderError
+from app.services.payments.disabled import DisabledProvider
 from app.services.payments.midtrans import MidtransProvider
 
 #: Constructors rather than instances: a provider reads credentials from
 #: settings at build time, and tests patch settings between cases.
 _FACTORIES: dict[str, Callable[[], PaymentProvider]] = {
     "midtrans": MidtransProvider,
+    "disabled": DisabledProvider,
 }
+
+
+def payments_enabled() -> bool:
+    """False when the deployment is running without a real gateway."""
+    return settings.payment_provider != "disabled"
 
 
 def available_providers() -> tuple[str, ...]:

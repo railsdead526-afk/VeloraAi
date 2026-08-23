@@ -10,6 +10,7 @@ from app.services.payments.base import (
 from app.services.payments.registry import (
     available_providers,
     get_provider,
+    payments_enabled,
     register_provider,
 )
 
@@ -23,5 +24,6 @@ __all__ = [
     "TransactionStatus",
     "available_providers",
     "get_provider",
+    "payments_enabled",
     "register_provider",
 ]

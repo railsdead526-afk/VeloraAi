@@ -307,3 +307,81 @@ def test_provider_without_refund_support_is_refused(monkeypatch, db):
     response = client.post(f"/api/v1/payments/{payment.id}/refund", headers=headers)
     assert response.status_code == 400
     assert "outside VeloraAi" in response.json()["detail"]
+
+
+# --------------------------------------------------------------------------- #
+# Running with payments switched off
+#
+# A deployment that is not selling yet must be a supported state, not a
+# half-configured one. Blank credentials plus zero prices is how a system ends
+# up granting paid plans for free.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def payments_off(monkeypatch):
+    monkeypatch.setattr(settings, "payment_provider", "disabled")
+    return settings
+
+
+def test_disabled_provider_satisfies_the_protocol():
+    from app.services.payments.disabled import DisabledProvider
+
+    assert isinstance(DisabledProvider(), PaymentProvider)
+
+
+def test_payments_enabled_reflects_configuration(monkeypatch):
+    from app.services.payments import payments_enabled
+
+    monkeypatch.setattr(settings, "payment_provider", "disabled")
+    assert payments_enabled() is False
+    monkeypatch.setattr(settings, "payment_provider", "midtrans")
+    assert payments_enabled() is True
+
+
+def test_config_reports_disabled_instead_of_erroring(payments_off):
+    """The UI needs an honest 'unavailable' state, not a 500."""
+    headers = _headers("cfg-off@example.com")
+    body = client.get("/api/v1/payments/config", headers=headers).json()
+    assert body["enabled"] is False
+    assert "not enabled" in body["reason"]
+
+
+def test_checkout_is_refused_when_payments_are_off(payments_off):
+    monkeypatch_price = settings.pro_price_idr
+    settings.pro_price_idr = 19900
+    try:
+        headers = _headers("checkout-off@example.com")
+        response = client.post("/api/v1/payments/create", headers=headers, json={"plan": "pro"})
+        assert response.status_code == 502
+        assert "not enabled" in response.json()["detail"]
+    finally:
+        settings.pro_price_idr = monkeypatch_price
+
+
+def test_webhook_is_refused_when_payments_are_off(payments_off):
+    response = client.post("/api/v1/payments/notification", json={"reference": "x", "total": "1"})
+    assert response.status_code == 400
+
+
+def test_production_does_not_demand_a_gateway_when_payments_are_off():
+    """Otherwise 'we are not selling yet' would block the deploy entirely."""
+    from tests.test_production_config_gates import _production_settings
+
+    config = _production_settings()
+    config.payment_provider = "disabled"
+    config.midtrans_server_key = ""
+    config.midtrans_client_key = ""
+    config.pro_price_idr = 0
+    config.max_price_idr = 0
+    config.validate()
+
+
+def test_production_still_demands_a_gateway_when_payments_are_on():
+    from tests.test_production_config_gates import _production_settings
+
+    config = _production_settings()
+    config.payment_provider = "midtrans"
+    config.midtrans_server_key = ""
+    with pytest.raises(RuntimeError, match="Midtrans credentials"):
+        config.validate()
