@@ -81,7 +81,9 @@ def _history_with_rag_context(
 
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(settings.rate_limit_default)
 def create_new_conversation(
+    request: Request,
     payload: ConversationCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -118,7 +120,9 @@ def list_my_conversations(
 
 
 @router.patch("/{conversation_id}", response_model=ConversationResponse)
+@limiter.limit(settings.rate_limit_default)
 def rename_conversation(
+    request: Request,
     conversation_id: int,
     payload: ConversationUpdate,
     db: Session = Depends(get_db),
@@ -131,8 +135,12 @@ def rename_conversation(
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(settings.rate_limit_default)
 def remove_conversation(
-    conversation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)
+    request: Request,
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:

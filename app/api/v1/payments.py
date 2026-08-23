@@ -78,7 +78,8 @@ def create_payment(
 
 
 @router.post("/notification", status_code=status.HTTP_200_OK)
-def payment_notification(payload: dict, db: Session = Depends(get_db)):
+@limiter.limit(settings.rate_limit_webhook)
+def payment_notification(request: Request, payload: dict, db: Session = Depends(get_db)):
     """Provider webhook.
 
     Defence in depth, in order: the provider authenticates the body, the amount

@@ -49,6 +49,15 @@ def _rate_limit_handler(request: Request, exc: Exception) -> Response:
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
+# Note on rate limiting: the default_limits configured in app/core/rate_limit.py
+# only take effect through SlowAPIMiddleware, and that middleware never fires on
+# this FastAPI version - it resolves the handler by walking app.routes, which now
+# holds nested _IncludedRouter objects rather than endpoints, so
+# Limiter._check_request_limit is never reached. Installing it would look like
+# protection while providing none, so every endpoint that needs a limit carries
+# an explicit @limiter.limit decorator instead. tests/test_rate_limits.py pins
+# that down.
+
 if settings.trusted_hosts:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 

@@ -77,7 +77,9 @@ def connect_provider(
 
 
 @router.delete("/{provider}", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.rate_limit_default)
 def disconnect_provider(
+    request: Request,
     provider: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),

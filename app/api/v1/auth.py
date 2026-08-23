@@ -193,6 +193,7 @@ def refresh(request: Request, payload: RefreshRequest, db: Session = Depends(get
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.rate_limit_default)
 def logout(
     payload: LogoutRequest,
     request: Request,
@@ -366,7 +367,9 @@ def export_my_data(
 
 
 @router.delete("/me", status_code=status.HTTP_200_OK)
+@limiter.limit(settings.rate_limit_auth)
 def delete_account(
+    request: Request,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):

@@ -87,6 +87,9 @@ class Settings:
     rate_limit_default = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
     rate_limit_auth = os.getenv("RATE_LIMIT_AUTH", "10/minute")
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
+    #: Provider webhooks arrive from a small set of gateway IPs and can burst
+    #: during a settlement batch, so this sits well above the default.
+    rate_limit_webhook = os.getenv("RATE_LIMIT_WEBHOOK", "240/minute")
     rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
     cors_origins = _env_list("CORS_ORIGINS")
     trusted_hosts = _env_list("TRUSTED_HOSTS")

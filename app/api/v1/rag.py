@@ -155,7 +155,12 @@ def list_documents(
 
 
 @router.get("/usage")
-def get_embedding_usage(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+@limiter.limit(settings.rate_limit_default)
+def get_embedding_usage(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     since = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     summary = embedding_usage_summary(db, user_id=current_user.id, since=since)
     # Consumption without the ceiling is not actionable for the user.
@@ -203,8 +208,12 @@ def reindex_one_document(
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(settings.rate_limit_default)
 def delete_one_document(
-    document_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)
+    request: Request,
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
     try:
         delete_document(db, user_id=current_user.id, document_id=document_id)
