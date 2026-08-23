@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -23,7 +24,11 @@ def tax_component(gross_amount: int) -> int:
 
 
 def next_invoice_number(db: Session, *, now: datetime | None = None) -> str:
-    """Sequential per-month invoice reference, e.g. ``INV-2026-08-000042``."""
+    """Sequential per-month invoice reference, e.g. ``INV-2026-08-000042``.
+
+    Racy on its own: two settlements reading before either commits both compute
+    the same number. Use :func:`assign_invoice_number`, which retries.
+    """
     moment = now or datetime.now(UTC)
     prefix = f"INV-{moment:%Y-%m}-"
     latest = db.execute(
@@ -34,6 +39,37 @@ def next_invoice_number(db: Session, *, now: datetime | None = None) -> str:
     ).scalar_one_or_none()
     sequence = int(latest.rsplit("-", 1)[1]) + 1 if latest else 1
     return f"{prefix}{sequence:06d}"
+
+
+#: Enough to absorb realistic contention; each retry re-reads the high-water mark.
+_INVOICE_ATTEMPTS = 8
+
+
+def assign_invoice_number(db: Session, payment: Payment, *, now: datetime | None = None) -> str:
+    """Give the payment a unique invoice number, retrying on collision.
+
+    invoice_number carries a UNIQUE constraint, and the number is derived from
+    the current maximum. Two provider notifications settling at the same moment
+    therefore computed the same value and the second commit died with an
+    IntegrityError, failing a webhook for a payment that had genuinely been
+    made.
+
+    Each attempt runs inside a SAVEPOINT so a collision rolls back only the
+    failed assignment, leaving the caller's surrounding transaction intact.
+    """
+    for _ in range(_INVOICE_ATTEMPTS):
+        candidate = next_invoice_number(db, now=now)
+        savepoint = db.begin_nested()
+        try:
+            payment.invoice_number = candidate
+            db.flush()
+        except IntegrityError:
+            savepoint.rollback()
+            continue
+        savepoint.commit()
+        return candidate
+
+    raise RuntimeError("Unable to allocate a unique invoice number")
 
 
 def create_payment_intent(
@@ -140,7 +176,7 @@ def apply_payment_notification(
         payment.provider_transaction_id = provider_transaction_id or payment.provider_transaction_id
         payment.payment_type = payment_type or payment.payment_type
         if payment.invoice_number is None:
-            payment.invoice_number = next_invoice_number(db)
+            assign_invoice_number(db, payment)
         if not payment.tax_amount:
             payment.tax_amount = tax_component(payment.amount)
 
