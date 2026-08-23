@@ -151,3 +151,57 @@ These are deliberately listed as open. None is satisfied by code alone.
 
 A production deployment is not ready while any gate under **Blocking public
 launch** remains open.
+
+## Foundation sweep — August 2026
+
+A systematic pass over the modules that had never been reviewed in depth. Every
+finding below was reproduced before it was fixed, and each carries a regression
+test.
+
+### Fixed
+
+| Area | Finding |
+|---|---|
+| `ai_tool_loop` | The sync and async copies had drifted; the sync one had lost its retry backoff, so a 429 was retried instantly. Collapsed into one implementation. |
+| `ai_tool_loop`, `ai_tool_stream` | Exhausting the tool-round budget raised a 500 and discarded every token already paid for. The final round now withholds tools so the model must answer. |
+| `ai_tool_stream` | A retried streaming round appended partial tool-call arguments onto those of the aborted attempt, producing invalid JSON — the tool then never ran at all. It also billed the failed attempt's tokens. |
+| `rag_service` | Every chunk of a document was sent as one embeddings call. At the 10 MB upload default that is ~10,000 inputs, past every provider limit, so large documents could not be indexed. Now batched. |
+| `rag_service` | Embeddings was the only provider call with no retry; one blip failed a document permanently. |
+| `rag_service` | `ingest_text` was dead outside the tests and, unlike the real job, never recorded embedding usage. Removed. |
+| `sandbox_client` | `workspace_id` was interpolated into a URL path. httpx resolves dot segments, so `../../v1/admin` reached a different sandbox endpoint with the operator token. Not reachable from a model today — no tool exposes the argument — but the plumbing accepted one. |
+| `providers`, `github_tools`, `platform_tools`, `supabase_tools`, `cloudflare_tools` | Same class of bug for repository names, project/deployment/zone/record ids, shas and file paths. Counting slashes accepted `../x`; `quote(safe='')` left `..` untouched because a dot is unreserved. Centralised in `app/tools/identifiers.py`. |
+| API | `default_limits` applied to nothing: it needs SlowAPIMiddleware, which never fires on this FastAPI version. 200 posts to the unauthenticated payment webhook produced zero 429s. Explicit decorators added. |
+| `Chat.tsx` | Unguarded `JSON.parse` in the SSE loop — one malformed line discarded the reply already on screen. The reader was never released on error or abort. |
+| `Chat.tsx` | Every token committed to React state, re-rendering the whole transcript per token. Now batched per animation frame. |
+
+### Verified healthy, no change needed
+
+- Production configuration gates reject every unsafe combination tried:
+  default/short `SECRET_KEY`, wildcard or plaintext CORS, SQLite, in-memory rate
+  limit storage, missing `CREDENTIAL_ENCRYPTION_KEYS`, `ALLOW_ENV_TOOL_CREDENTIALS`,
+  `APP_DEBUG`, missing SMTP or trusted hosts. Docs and OpenAPI are off in production.
+- `alembic check` on PostgreSQL reports no drift between migrations and models.
+- `pip-audit` clean on both requirement sets; `npm audit` reports no
+  vulnerabilities.
+- `bandit` reports only false positives (token-type and provider name strings).
+- No XSS in the frontend: React escapes message content and nothing uses
+  `dangerouslySetInnerHTML`.
+- `railway_*` tools were already safe — ids travel as GraphQL variables.
+- The refresh path shares a single in-flight promise, so concurrent 401s cannot
+  trip the server's refresh-reuse theft detection.
+- Streaming failure is atomic by design: the user message is only persisted once
+  the reply succeeds. Tested, deliberate, left alone.
+
+### Known limitations, accepted for now
+
+- **Rate limits bind authenticated abuse, not anonymous traffic.** A
+  `@limiter.limit` decorator wraps the endpoint function, and FastAPI resolves
+  dependencies first, so an anonymous flood is rejected with 401 — and a
+  malformed body with 422 — before the limiter is consulted. Blocking that needs
+  a limiter at the edge.
+- **Tokens live in `localStorage`.** Vulnerable to XSS by construction. There is
+  no XSS today, and moving to httpOnly cookies pulls in CSRF defences; revisit
+  before handling other people's production credentials at scale.
+- **Frontend tests do not run in CI.** `npm test` needs adding to the Frontend
+  job in `.github/workflows/ci.yml`; the change is staged in
+  `.github/workflows-proposed/ci.yml`.
