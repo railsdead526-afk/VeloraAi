@@ -192,6 +192,34 @@ test.
 - Streaming failure is atomic by design: the user message is only persisted once
   the reply succeeds. Tested, deliberate, left alone.
 
+### Second pass — services, billing and the remaining panels
+
+| Area | Finding |
+|---|---|
+| `auth.login` | `user is not None and verify_password(...)` skipped Argon2 when no account matched. Measured 114 ms for a registered address against 9 ms for an unregistered one — a 12x gap visible in one request. Account enumeration, and cheaper targeted credential stuffing. Now 1.05x. |
+| `rag_service` | `build_context` reads `chunk.document.name`; neither candidate query loaded the document, so five hits cost five extra SELECTs on every RAG-backed message. |
+| `quota_service` | Completing a reservation that had been swept raised, and `agent_stream` rolls back on RuntimeError — so a long agent turn streamed its reply to the screen and then discarded the messages and the usage row. Paid the provider, could not charge the user. |
+| `quota_service` | Settled reservation rows had no retention policy. |
+| `billing_service` | Invoice numbers derived from `max()+1` with no lock. Two settlements at the same moment produced the same number and the second commit died on the UNIQUE constraint, failing a webhook for money already received. |
+| `subscription_lifecycle` | Renewal reminders keyed on `(period_end - now).days`, which holds for a whole day while the sweep runs hourly. One 30-day period simulated at hourly resolution sent **72** emails: 24 per milestone. Sender reputation damage lands on verification and password-reset mail. Now 3. |
+| `DocumentsPanel` | Polled for `pending`/`processing`/`indexing`; the backend emits `queued`/`processing`/`ready`/`failed`. Two names were fiction and `queued` — the state every new document starts in — was missing. The effect also had an empty dependency list, so an upload never armed the timer. Status never updated in the UI. |
+| `payments` | `redirect_url` went from the gateway response through the backend to `window.location` unvalidated. A `javascript:` URL there runs in our origin, and tokens live in localStorage. |
+| migrations | `0017_subscription_reminder_marker` was 33 characters; `alembic_version.version_num` is VARCHAR(32). SQLite ignores declared lengths, so the whole local suite and the SQLite job passed while only the PostgreSQL job went red. |
+
+Guards added so these classes cannot recur silently:
+
+- `tests/test_document_status_contract.py` parses `web/lib/documents.ts` and
+  compares it against `app/models/document.py`. The drift above produced no
+  exception, no log line and no test failure; only a cross-language contract
+  test could have caught it.
+- `tests/test_migration_chain.py` checks revision id length, a single head, no
+  duplicate ids and a real downgrade — all from the SQLite job.
+- `tests/test_rag_query_counts.py` counts queries rather than timing them.
+- `tests/test_login_timing.py` asserts the timing ratio stays under 2x.
+
+Every fix in this table was reproduced before being changed, and each test was
+verified to fail against the previous implementation.
+
 ### Known limitations, accepted for now
 
 - **Rate limits bind authenticated abuse, not anonymous traffic.** A
@@ -205,3 +233,15 @@ test.
 - **Frontend tests do not run in CI.** `npm test` needs adding to the Frontend
   job in `.github/workflows/ci.yml`; the change is staged in
   `.github/workflows-proposed/ci.yml`.
+- **`/register` still discloses whether an email is registered**, via its 400
+  "Email already registered". Unlike the login timing gap this is deliberate and
+  rate limited, but it means closing the timing oracle does not by itself stop
+  enumeration. Closing it properly means always answering 201 and sending a
+  different email when the account already exists.
+- **Quota windows are UTC.** "Daily" therefore resets at 07:00 WIB rather than
+  midnight for Indonesian users. Consistent and predictable, but worth revisiting
+  before selling daily-limited plans domestically.
+- **No component-level frontend tests.** The suite covers pure modules only, so a
+  regression in rendering or effect wiring would not be caught. The
+  `DocumentsPanel` polling bug is exactly the kind a component test would have
+  found.
