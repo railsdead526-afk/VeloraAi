@@ -20,6 +20,7 @@ from app.core.metrics import subscription_state
 from app.core.observability import configure_logging
 from app.models.billing import Subscription
 from app.services.auth_tokens import purge_expired_tokens
+from app.services.quota_service import purge_settled_reservations
 from app.services.subscription_lifecycle import sweep_subscriptions
 
 logger = logging.getLogger("veloraai.maintenance")
@@ -44,6 +45,7 @@ def main() -> int:
     try:
         sweep = sweep_subscriptions(db)
         purged = purge_expired_tokens(db)
+        purged["ai_request_reservations"] = purge_settled_reservations(db)
         gauges = refresh_subscription_gauges(db)
         report = {
             "event": "maintenance_completed",

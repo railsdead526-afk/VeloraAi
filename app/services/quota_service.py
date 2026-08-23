@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
@@ -8,7 +9,12 @@ from app.models.ai_request_reservation import AIRequestReservation
 from app.models.ai_usage import AIUsage
 from app.models.user import User
 
-RESERVATION_TTL = timedelta(minutes=10)
+logger = logging.getLogger(__name__)
+
+RESERVATION_TTL = timedelta(minutes=30)
+#: Reservation rows are audit-free bookkeeping; once settled they only need to
+#: survive long enough to debug a recent incident.
+RESERVATION_RETENTION = timedelta(days=7)
 
 
 class QuotaExceededError(Exception):
@@ -182,16 +188,56 @@ def reserve_plan_request_quota(db: Session, *, user_id: int, policy: PlanPolicy)
 
 
 def complete_request_reservation(db: Session, reservation_id: int) -> None:
+    """Mark a reservation as completed.
+
+    Deliberately forgiving. A reservation that expired mid-flight is swept to
+    ``released`` by the next request from the same account, and raising here
+    used to abort the caller's transaction: the reply was already streamed to
+    the user, but the messages were rolled back and the usage never recorded.
+    That loses the user's answer and bills us for a provider call we cannot
+    charge for.
+
+    The reservation only exists to stop a single account over-committing while
+    a request is in flight. Once the work is done, the accounting is settled by
+    ``record_ai_usage``, so completing late is always the right outcome.
+    """
     now = _now()
     reservation = (
         db.query(AIRequestReservation)
         .filter(AIRequestReservation.id == reservation_id)
         .one_or_none()
     )
-    if reservation is None or reservation.status != "reserved":
-        raise RuntimeError("AI request reservation is not active")
+    if reservation is None:
+        logger.warning(
+            "AI request reservation vanished before completion",
+            extra={"reservation_id": reservation_id},
+        )
+        return
+    if reservation.status == "completed":
+        return
+    if reservation.status != "reserved":
+        logger.info(
+            "Completing an AI request reservation that had already been swept",
+            extra={"reservation_id": reservation_id, "previous_status": reservation.status},
+        )
+        reservation.released_at = None
     reservation.status = "completed"
     reservation.completed_at = now
+
+
+def purge_settled_reservations(db: Session, *, now: datetime | None = None) -> int:
+    """Delete old completed/released rows so the table does not grow forever."""
+    cutoff = (now or _now()) - RESERVATION_RETENTION
+    deleted = (
+        db.query(AIRequestReservation)
+        .filter(
+            AIRequestReservation.status.in_(("completed", "released")),
+            AIRequestReservation.created_at < cutoff,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted or 0)
 
 
 def release_request_reservation(db: Session, reservation_id: int) -> None:
