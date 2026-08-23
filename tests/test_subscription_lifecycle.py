@@ -19,6 +19,7 @@ from app.services.billing_service import (
     sync_user_role,
     tax_component,
 )
+from app.services.payments import PaymentOutcome
 from app.services.subscription_lifecycle import (
     cancel_at_period_end,
     resume_subscription,
@@ -42,6 +43,7 @@ def _settle(db, user: User, plan: str = "pro", amount: int = 99_000) -> Payment:
         provider_order_id=payment.provider_order_id,
         provider_transaction_id=f"txn-{payment.id}",
         transaction_status="settlement",
+        outcome=PaymentOutcome.PAID,
     )
     db.refresh(payment)
     return payment
@@ -93,6 +95,7 @@ def test_failed_payment_grants_no_period(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="txn-fail",
         transaction_status="deny",
+        outcome=PaymentOutcome.FAILED,
     )
     db.refresh(user)
     assert user.role == "free"

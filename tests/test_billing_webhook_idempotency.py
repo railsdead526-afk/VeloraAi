@@ -1,6 +1,7 @@
 from app.models.billing import Payment, Subscription
 from app.models.user import User
 from app.services.billing_service import apply_payment_notification
+from app.services.payments import PaymentOutcome
 
 
 def test_repeated_settlement_notification_reuses_existing_subscription(db):
@@ -28,6 +29,7 @@ def test_repeated_settlement_notification_reuses_existing_subscription(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="txn-1",
         transaction_status="settlement",
+        outcome=PaymentOutcome.PAID,
         payment_type="qris",
     )
     assert first is not None
@@ -40,6 +42,7 @@ def test_repeated_settlement_notification_reuses_existing_subscription(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="txn-1",
         transaction_status="settlement",
+        outcome=PaymentOutcome.PAID,
         payment_type="qris",
     )
 

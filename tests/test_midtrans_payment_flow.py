@@ -51,10 +51,11 @@ def test_midtrans_pending_failed_settlement_duplicate_webhook_flow(monkeypatch):
     }
     with (
         patch(
-            "app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True
+            "app.services.midtrans_service.MidtransService.verify_notification_signature",
+            return_value=True,
         ),
         patch(
-            "app.api.v1.payments.MidtransService.get_transaction_status",
+            "app.services.midtrans_service.MidtransService.get_transaction_status",
             side_effect=[
                 verified("pending"),
                 verified("deny"),
@@ -101,10 +102,11 @@ def test_midtrans_failed_payment_does_not_activate_subscription(monkeypatch):
     order_id = created.json()["order_id"]
     with (
         patch(
-            "app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True
+            "app.services.midtrans_service.MidtransService.verify_notification_signature",
+            return_value=True,
         ),
         patch(
-            "app.api.v1.payments.MidtransService.get_transaction_status",
+            "app.services.midtrans_service.MidtransService.get_transaction_status",
             return_value={
                 "order_id": order_id,
                 "gross_amount": "19900",

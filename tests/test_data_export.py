@@ -123,6 +123,7 @@ def test_export_records_an_audit_event(db):
 
 def test_export_includes_billing_records_for_reconciliation(db):
     from app.services.billing_service import apply_payment_notification, create_payment_intent
+    from app.services.payments import PaymentOutcome
 
     user = _make_user(db, "billing-export@example.com")
     payment = create_payment_intent(db, user_id=user.id, plan="pro", amount=99_000)
@@ -132,6 +133,7 @@ def test_export_includes_billing_records_for_reconciliation(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="txn-export",
         transaction_status="settlement",
+        outcome=PaymentOutcome.PAID,
     )
 
     payload = build_export(db, user=user)

@@ -16,7 +16,7 @@ from app.services.billing_service import (
     create_payment_intent,
     sync_user_role,
 )
-from app.services.midtrans_service import MidtransError, MidtransService
+from app.services.payments import PaymentOutcome, PaymentProviderError, get_provider
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 CHECKOUT_FILE = Path(__file__).resolve().parents[2] / "static" / "checkout.html"
@@ -38,17 +38,13 @@ def checkout_page():
 
 @router.get("/config")
 def payment_config(current_user=Depends(get_current_user)):
-    if not settings.midtrans_client_key:
+    """Non-secret settings the checkout UI needs, shaped by the active provider."""
+    try:
+        return get_provider().client_config()
+    except PaymentProviderError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Payment client is not configured",
-        )
-    return {
-        "provider": "midtrans",
-        "is_production": settings.midtrans_is_production,
-        "pro_price_idr": settings.pro_price_idr,
-        "max_price_idr": settings.max_price_idr,
-    }
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
 
 
 @router.get("/snap-script.js", include_in_schema=False)
@@ -78,74 +74,78 @@ def create_payment(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    provider = get_provider()
     payment = create_payment_intent(
         db,
         user_id=current_user.id,
         plan=payload.plan,
         amount=_plan_amount(payload.plan),
-        provider="midtrans",
+        provider=provider.name,
     )
     try:
-        result = MidtransService().create_snap_transaction(
+        session = provider.create_checkout(
             order_id=payment.provider_order_id,
-            gross_amount=payment.amount,
+            amount=payment.amount,
+            currency=payment.currency,
             customer_email=current_user.email,
             item_name=f"VeloraAi {payload.plan.upper()}",
         )
-    except MidtransError as exc:
+    except PaymentProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    payment.snap_token = result["token"]
+
+    payment.snap_token = session.token
     db.commit()
     return PaymentCreateResponse(
-        order_id=payment.provider_order_id,
-        amount=payment.amount,
-        currency=payment.currency,
-        snap_token=result["token"],
-        redirect_url=result["redirect_url"],
+        order_id=session.order_id,
+        amount=session.amount,
+        currency=session.currency,
+        snap_token=session.token or "",
+        redirect_url=session.redirect_url,
     )
 
 
 @router.post("/notification", status_code=status.HTTP_200_OK)
 def payment_notification(payload: dict, db: Session = Depends(get_db)):
-    order_id = str(payload.get("order_id", "")).strip()
-    status_code = str(payload.get("status_code", "")).strip()
-    gross_amount = str(payload.get("gross_amount", "")).strip()
-    signature_key = str(payload.get("signature_key", "")).strip()
-    if not order_id or not status_code or not gross_amount or not signature_key:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid notification payload"
-        )
+    """Provider webhook.
+
+    Defence in depth, in order: the provider authenticates the body, the amount
+    is matched against what we recorded, and the transaction is then re-fetched
+    from the provider. A forged notification cannot grant a plan even if the
+    signature scheme itself were broken.
+    """
+    provider = get_provider()
+
+    try:
+        envelope = provider.parse_notification(payload)
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     payment = (
         db.query(Payment)
-        .filter(Payment.provider == "midtrans", Payment.provider_order_id == order_id)
+        .filter(
+            Payment.provider == provider.name,
+            Payment.provider_order_id == envelope.order_id,
+        )
         .first()
     )
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
-    if str(payment.amount) != gross_amount:
+    if envelope.gross_amount is not None and str(payment.amount) != envelope.gross_amount:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Payment amount mismatch"
         )
+    if not envelope.signature_valid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid payment signature"
+        )
 
     try:
-        midtrans = MidtransService()
-        if not midtrans.verify_notification_signature(
-            order_id=order_id,
-            status_code=status_code,
-            gross_amount=gross_amount,
-            signature_key=signature_key,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Invalid payment signature"
-            )
-        verified = midtrans.get_transaction_status(order_id)
-    except MidtransError as exc:
+        verified = provider.fetch_transaction(envelope.order_id)
+    except PaymentProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    if (
-        str(verified.get("order_id", "")) != order_id
-        or str(verified.get("gross_amount", "")) != gross_amount
+    if verified.order_id != envelope.order_id or (
+        envelope.gross_amount is not None and verified.gross_amount != envelope.gross_amount
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Verified payment mismatch"
@@ -153,11 +153,12 @@ def payment_notification(payload: dict, db: Session = Depends(get_db)):
 
     updated = apply_payment_notification(
         db,
-        provider="midtrans",
-        provider_order_id=order_id,
-        provider_transaction_id=verified.get("transaction_id"),
-        transaction_status=str(verified.get("transaction_status", "")),
-        payment_type=verified.get("payment_type"),
+        provider=provider.name,
+        provider_order_id=verified.order_id,
+        provider_transaction_id=verified.transaction_id,
+        transaction_status=verified.raw_status,
+        outcome=verified.outcome,
+        payment_type=verified.payment_type,
     )
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
@@ -175,9 +176,14 @@ def refund_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
-    if payment.provider != "midtrans":
+    try:
+        provider = get_provider(payment.provider)
+    except PaymentProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not provider.supports_refund:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment provider"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{provider.name} refunds are handled outside VeloraAi",
         )
     if payment.status != "settlement":
         raise HTTPException(
@@ -196,16 +202,18 @@ def refund_payment(
             status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded"
         )
     try:
-        result = MidtransService().refund_transaction(
-            payment.provider_order_id, refund_amount, "VeloraAi admin refund"
+        result = provider.refund(
+            order_id=payment.provider_order_id,
+            amount=refund_amount,
+            reason="VeloraAi admin refund",
         )
-    except MidtransError as exc:
+    except PaymentProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
     payment.refund_amount = payment.refund_amount + refund_amount
-    payment.refund_status = str(result.get("status_code", result.get("status", "pending")))
-    payment.refund_transaction_id = result.get("refund_key") or result.get("transaction_id")
-    if payment.refund_status in {"settlement", "200"}:
+    payment.refund_status = result.raw_status
+    payment.refund_transaction_id = result.reference
+    if result.outcome is PaymentOutcome.REFUNDED:
         payment.refunded_at = payment.refunded_at or datetime.now(UTC)
         payment.status = "refunded"
         if payment.subscription is not None:

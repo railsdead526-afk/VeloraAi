@@ -6,6 +6,26 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Payments are provider-agnostic.** Midtrans was wired into the API layer and
+  into `billing_service`, where `PAID_STATUSES = {"settlement", "capture"}`
+  meant one vendor's wording defined "this customer has paid" inside the module
+  that grants entitlement. Gateways now implement a `PaymentProvider` contract
+  and map their own vocabulary to a canonical `PaymentOutcome` at the boundary.
+  Adding Xendit, Duitku, or Google Play Billing is one adapter; the subscription
+  lifecycle does not change. See `docs/adr/0004-payment-provider-abstraction.md`.
+- `PAYMENT_PROVIDER` selects the gateway for web checkout.
+
+### Fixed
+
+- `authorize` was treated as payment by `PAID_STATUSES`' sibling logic paths.
+  It now maps to `PENDING`: funds are reserved, not captured, and granting a
+  plan on an authorisation is money never collected.
+- An unrecognised gateway status previously fell into the generic branch and
+  overwrote payment state. It now maps to `UNKNOWN` and changes nothing, so a
+  status we have never seen cannot cost a paying customer their plan.
+
 ### Added
 
 - `/verify-email` and `/reset-password` routes, and a forgot-password link on

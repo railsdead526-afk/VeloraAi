@@ -323,7 +323,7 @@ def test_payment_create_and_duplicate_settlement_is_idempotent(monkeypatch):
 
     with (
         patch(
-            "app.api.v1.payments.MidtransService.get_transaction_status",
+            "app.services.midtrans_service.MidtransService.get_transaction_status",
             return_value={
                 "order_id": order_id,
                 "gross_amount": "19900",
@@ -333,7 +333,8 @@ def test_payment_create_and_duplicate_settlement_is_idempotent(monkeypatch):
             },
         ),
         patch(
-            "app.api.v1.payments.MidtransService.verify_notification_signature", return_value=True
+            "app.services.midtrans_service.MidtransService.verify_notification_signature",
+            return_value=True,
         ),
     ):
         payload = {

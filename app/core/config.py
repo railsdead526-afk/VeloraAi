@@ -64,6 +64,9 @@ class Settings:
 
     document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
+    #: Which gateway handles web checkout. See app/services/payments/registry.py.
+    payment_provider = os.getenv("PAYMENT_PROVIDER", "midtrans").strip().lower()
+
     midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
     midtrans_client_key = os.getenv("MIDTRANS_CLIENT_KEY", "")
     midtrans_is_production = _env_bool("MIDTRANS_IS_PRODUCTION", False)
@@ -158,6 +161,8 @@ class Settings:
             raise RuntimeError("SMTP_USE_SSL and SMTP_USE_STARTTLS are mutually exclusive")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
+        if not self.payment_provider:
+            raise RuntimeError("PAYMENT_PROVIDER must be configured")
 
         if self.is_production:
             if self.database_schema == "public":

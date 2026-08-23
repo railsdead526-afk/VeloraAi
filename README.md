@@ -100,6 +100,12 @@ never the value. Tools then resolve that user's credential automatically.
 
 ## Billing model
 
+Gateways are pluggable. `PAYMENT_PROVIDER` selects one; each adapter maps its
+own status vocabulary to a canonical outcome, so the subscription logic never
+learns a vendor's wording. Adding Xendit, Duitku, or Google Play Billing is one
+file under `app/services/payments/`.
+
+
 Paid plans are **bounded periods**, not one-off unlocks.
 
 ```

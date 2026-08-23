@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.billing import Payment, Subscription
 from app.models.user import User
+from app.services.payments.base import PaymentOutcome
 
-PAID_STATUSES = {"settlement", "capture"}
-FAILED_STATUSES = {"deny", "cancel", "expire", "failure"}
+#: Once a payment reaches one of these, later notifications cannot change it.
+#: Providers legitimately resend, and out-of-order delivery is normal.
 TERMINAL_PAYMENT_STATUSES = {"settlement", "refunded"}
 PLAN_PRIORITY = {"free": 0, "pro": 1, "max": 2}
 
@@ -107,8 +108,15 @@ def apply_payment_notification(
     provider_order_id: str,
     provider_transaction_id: str | None,
     transaction_status: str,
+    outcome: PaymentOutcome,
     payment_type: str | None = None,
 ) -> Payment | None:
+    """Apply a verified provider notification to a payment and its subscription.
+
+    `outcome` is the canonical meaning, decided by the provider adapter.
+    `transaction_status` is the provider's own wording, stored as-is so support
+    and reconciliation can see exactly what the gateway said.
+    """
     payment = db.execute(
         select(Payment)
         .where(
@@ -122,7 +130,7 @@ def apply_payment_notification(
 
     normalized = transaction_status.lower()
     if payment.status in TERMINAL_PAYMENT_STATUSES:
-        if payment.status == "settlement" and normalized in PAID_STATUSES:
+        if payment.status == "settlement" and outcome is PaymentOutcome.PAID:
             payment.provider_transaction_id = (
                 provider_transaction_id or payment.provider_transaction_id
             )
@@ -131,7 +139,9 @@ def apply_payment_notification(
             db.refresh(payment)
         return payment
 
-    if normalized in PAID_STATUSES:
+    if outcome is PaymentOutcome.PAID:
+        # Normalised so downstream reads do not have to know each provider's
+        # word for "money received".
         payment.status = "settlement"
         payment.paid_at = payment.paid_at or datetime.now(UTC)
         payment.provider_transaction_id = provider_transaction_id or payment.provider_transaction_id
@@ -187,11 +197,17 @@ def apply_payment_notification(
 
         payment.subscription_id = subscription.id
         sync_user_role(db, user_id=payment.user_id)
-    elif normalized in FAILED_STATUSES:
-        payment.status = normalized
+    elif outcome is PaymentOutcome.REFUNDED:
+        payment.status = "refunded"
         payment.provider_transaction_id = provider_transaction_id or payment.provider_transaction_id
         payment.payment_type = payment_type or payment.payment_type
+        if payment.subscription is not None:
+            payment.subscription.status = "canceled"
+        sync_user_role(db, user_id=payment.user_id)
     else:
+        # PENDING, FAILED, and UNKNOWN all keep the provider's own wording.
+        # UNKNOWN deliberately does not revoke anything: an unrecognised status
+        # must never cost a paying customer their plan.
         payment.status = normalized
         payment.provider_transaction_id = provider_transaction_id or payment.provider_transaction_id
         payment.payment_type = payment_type or payment.payment_type
