@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 
+import { navigateExternal } from '../../lib/navigation'
+
 import {
   changePassword,
   createPayment,
@@ -98,7 +100,7 @@ export default function AccountPanel({
   const handleUpgrade = async (plan: 'pro' | 'max') => {
     await run(async () => {
       const intent = await createPayment(plan)
-      window.location.href = intent.redirect_url
+      navigateExternal(intent.redirect_url)
     }, 'Redirecting to checkout…')
   }
 

@@ -17,6 +17,7 @@ from app.services.payments.base import (
     PaymentProviderError,
     RefundResult,
     TransactionStatus,
+    validate_redirect_url,
 )
 
 #: Midtrans status vocabulary, mapped to what it means for entitlement.
@@ -89,7 +90,7 @@ class MidtransProvider:
         return CheckoutSession(
             order_id=order_id,
             token=result.get("token"),
-            redirect_url=result["redirect_url"],
+            redirect_url=validate_redirect_url(result.get("redirect_url", "")),
             amount=amount,
             currency=currency,
         )

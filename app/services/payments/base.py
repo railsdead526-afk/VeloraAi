@@ -20,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlparse
 
 
 class PaymentProviderError(RuntimeError):
@@ -50,10 +51,31 @@ class CheckoutSession:
     order_id: str
     #: Opaque handle for an embedded widget, when the provider offers one.
     token: str | None
-    #: Hosted page to redirect to.
+    #: Hosted page to redirect to. Validated by `validate_redirect_url`: it is
+    #: handed to `window.location`, so a non-https scheme would run in our own
+    #: origin.
     redirect_url: str
     amount: int
     currency: str
+
+
+def validate_redirect_url(value: str) -> str:
+    """Reject anything that is not an absolute https URL.
+
+    The value comes back from the payment gateway and the browser navigates to
+    it directly. A `javascript:` or `data:` URL assigned to window.location
+    executes in our origin, which with tokens in localStorage means full session
+    theft. Providers only ever return hosted https pages, so anything else is
+    either a compromise or a bug.
+    """
+    candidate = (value or "").strip()
+    if not candidate:
+        raise PaymentProviderError("Payment provider returned no redirect URL")
+
+    parsed = urlparse(candidate)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise PaymentProviderError("Payment provider returned an unsupported redirect URL")
+    return candidate
 
 
 @dataclass(frozen=True)
