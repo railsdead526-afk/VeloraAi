@@ -24,22 +24,77 @@ class FakeResponse:
         return self._payload
 
 
-def test_sync_provider_retry_uses_configured_budget(monkeypatch):
+def _no_sleep(monkeypatch):
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(ai_tool_loop.asyncio, "sleep", fake_sleep)
+
+
+def test_provider_retry_uses_configured_budget(monkeypatch):
     attempts = {"count": 0}
     monkeypatch.setattr(ai_tool_loop.settings, "ai_max_retries", 2)
+    _no_sleep(monkeypatch)
 
     class Client:
-        def post(self, *args, **kwargs):
+        async def post(self, *args, **kwargs):
             attempts["count"] += 1
             if attempts["count"] < 3:
                 raise httpx.ConnectError("temporary")
             return FakeResponse()
 
-    result = ai_tool_loop._post_completion_sync(
-        Client(), "https://example.test/chat/completions", headers={}, payload={}
-    )
+    async def run():
+        return await ai_tool_loop._post_completion(
+            Client(), "https://example.test/chat/completions", headers={}, payload={}
+        )
+
+    result = asyncio.run(run())
     assert result["choices"][0]["message"]["content"] == "ok"
     assert attempts["count"] == 3
+
+
+def test_provider_retry_waits_between_attempts(monkeypatch):
+    """The synchronous path used to retry with no delay at all, hammering a 429."""
+    delays: list[float] = []
+    monkeypatch.setattr(ai_tool_loop.settings, "ai_max_retries", 2)
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr(ai_tool_loop.asyncio, "sleep", fake_sleep)
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        async def post(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls < 3:
+                raise httpx.ConnectError("temporary")
+            return FakeResponse()
+
+    async def run():
+        return await ai_tool_loop._post_completion(
+            Client(), "https://example.test/chat/completions", headers={}, payload={}
+        )
+
+    asyncio.run(run())
+    assert delays == [1.0, 2.0]
+
+
+def test_provider_retry_honours_retry_after_header(monkeypatch):
+    monkeypatch.setattr(ai_tool_loop.settings, "ai_max_retries", 1)
+    request = httpx.Request("POST", "https://example.test/chat/completions")
+    response = httpx.Response(429, request=request, headers={"Retry-After": "3"})
+    exc = httpx.HTTPStatusError("rate limited", request=request, response=response)
+    assert ai_tool_loop._retry_delay(0, exc) == 3.0
+
+
+def test_provider_retry_ignores_absurd_retry_after(monkeypatch):
+    request = httpx.Request("POST", "https://example.test/chat/completions")
+    response = httpx.Response(429, request=request, headers={"Retry-After": "600"})
+    exc = httpx.HTTPStatusError("rate limited", request=request, response=response)
+    assert ai_tool_loop._retry_delay(0, exc) == 1.0
 
 
 def test_async_provider_retry_does_not_retry_non_retryable_4xx(monkeypatch):
@@ -53,7 +108,7 @@ def test_async_provider_retry_does_not_retry_non_retryable_4xx(monkeypatch):
 
     async def run():
         with pytest.raises(httpx.HTTPStatusError):
-            await ai_tool_loop._post_completion_async(
+            await ai_tool_loop._post_completion(
                 Client(), "https://example.test/chat/completions", headers={}, payload={}
             )
 
@@ -68,7 +123,7 @@ def test_async_provider_cancellation_is_not_swallowed():
 
     async def run():
         with pytest.raises(asyncio.CancelledError):
-            await ai_tool_loop._post_completion_async(
+            await ai_tool_loop._post_completion(
                 Client(), "https://example.test/chat/completions", headers={}, payload={}
             )
 

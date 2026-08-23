@@ -125,15 +125,20 @@ async def stream_ai_reply_with_tools(
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(settings.ai_timeout_seconds)) as client:
         for round_index in range(MAX_TOOL_ROUNDS):
+            final_round = round_index == MAX_TOOL_ROUNDS - 1
             payload: dict[str, Any] = {
                 "model": config.model,
                 "messages": api_messages,
                 "temperature": 0.7,
-                "tools": registry.schemas_for(selected_tools),
-                "tool_choice": "auto",
                 "stream": True,
                 "stream_options": {"include_usage": True},
             }
+            if not final_round:
+                # On the final round the tools are withheld so the model has to answer
+                # the user instead of requesting yet another call. Previously this ended
+                # the stream with a 500 and threw away everything already paid for.
+                payload["tools"] = registry.schemas_for(selected_tools)
+                payload["tool_choice"] = "auto"
 
             tool_calls: dict[int, dict[str, str]] = {}
             assistant_content_parts: list[str] = []
@@ -141,6 +146,14 @@ async def stream_ai_reply_with_tools(
             last_error: Exception | None = None
 
             for attempt in range(settings.ai_max_retries + 1):
+                # A retry replays the request from scratch, so anything collected by
+                # the aborted attempt must be dropped. Keeping it would concatenate
+                # two partial JSON argument strings into one corrupt blob.
+                tool_calls = {}
+                assistant_content_parts = []
+                attempt_input_tokens = 0
+                attempt_output_tokens = 0
+                attempt_usage_seen = False
                 try:
                     async with client.stream(
                         "POST",
@@ -170,9 +183,9 @@ async def stream_ai_reply_with_tools(
 
                             input_tokens, output_tokens = parse_usage(data)
                             if input_tokens is not None and output_tokens is not None:
-                                total_input_tokens += input_tokens
-                                total_output_tokens += output_tokens
-                                usage_seen = True
+                                attempt_input_tokens += input_tokens
+                                attempt_output_tokens += output_tokens
+                                attempt_usage_seen = True
                                 continue
 
                             choices = data.get("choices") or []
@@ -214,6 +227,13 @@ async def stream_ai_reply_with_tools(
             if last_error is not None:
                 logger.exception("Streaming AI tool-loop request failed")
                 raise RuntimeError("AI service temporarily unavailable") from last_error
+
+            # Usage is only banked once an attempt actually completed, otherwise a
+            # retried round would bill the user for the tokens of the failed one.
+            if attempt_usage_seen:
+                total_input_tokens += attempt_input_tokens
+                total_output_tokens += attempt_output_tokens
+                usage_seen = True
 
             if not tool_calls:
                 if not assistant_content_parts:
@@ -308,5 +328,7 @@ async def stream_ai_reply_with_tools(
             if confirmation_required:
                 return
 
-            if round_index == MAX_TOOL_ROUNDS - 1:
+            if final_round:
+                # Only reachable when the provider emits tool calls even though the
+                # final round offered it no tools at all.
                 raise RuntimeError("AI tool execution exceeded the maximum number of rounds")
