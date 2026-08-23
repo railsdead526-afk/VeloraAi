@@ -10,16 +10,10 @@ import {
   uploadDocument,
   type Document,
 } from '../../lib/api'
+import { hasPendingDocuments, statusColor } from '../../lib/documents'
 
 /** Indexing is a background job, so poll while anything is still in flight. */
 const POLL_INTERVAL_MS = 4000
-const PENDING_STATES = new Set(['pending', 'processing', 'indexing'])
-
-function statusColor(status: string): string {
-  if (status === 'ready') return '#4ade80'
-  if (status === 'failed' || status === 'error') return '#f87171'
-  return '#fbbf24'
-}
 
 export default function DocumentsPanel({ onClose }: { onClose: () => void }) {
   const [documents, setDocuments] = useState<Document[]>([])
@@ -36,7 +30,34 @@ export default function DocumentsPanel({ onClose }: { onClose: () => void }) {
     return current
   }, [])
 
+  // First load. Kept separate from polling so an empty knowledge base still
+  // renders immediately.
   useEffect(() => {
+    let active = true
+    listDocuments()
+      .then((current) => {
+        if (active) setDocuments(current)
+      })
+      .catch((loadError: unknown) => {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : 'Failed to load documents')
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Poll only while something can still change, and re-arm whenever that
+  // becomes true again. Keying the effect on the derived boolean is what makes
+  // a freshly uploaded document start the timer: the old version ran once on
+  // mount with an empty dependency list, so anything added later sat on
+  // "queued" until the panel was reopened.
+  const pending = hasPendingDocuments(documents)
+
+  useEffect(() => {
+    if (!pending) return undefined
+
     let active = true
     let timer: number | undefined
 
@@ -45,9 +66,7 @@ export default function DocumentsPanel({ onClose }: { onClose: () => void }) {
         const current = await listDocuments()
         if (!active) return
         setDocuments(current)
-        // Stop polling once nothing is mid-index; a permanent timer on an idle
-        // panel is a battery and quota drain.
-        if (current.some((item) => PENDING_STATES.has(item.status))) {
+        if (hasPendingDocuments(current)) {
           timer = window.setTimeout(tick, POLL_INTERVAL_MS)
         }
       } catch (loadError) {
@@ -57,12 +76,12 @@ export default function DocumentsPanel({ onClose }: { onClose: () => void }) {
       }
     }
 
-    void tick()
+    timer = window.setTimeout(tick, POLL_INTERVAL_MS)
     return () => {
       active = false
       if (timer) window.clearTimeout(timer)
     }
-  }, [])
+  }, [pending])
 
   const run = async (action: () => Promise<void>, success: string) => {
     setError('')

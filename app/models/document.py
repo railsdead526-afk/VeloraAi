@@ -20,6 +20,27 @@ from app.models.types import UtcDateTime
 
 EMBEDDING_DIMENSIONS = 1536
 
+#: Indexing is a background job, so a document moves queued -> processing ->
+#: ready|failed. The web client polls while a document is in one of the first
+#: two states, so these names are a contract between the two sides; see
+#: web/lib/documents.ts and tests/test_document_status_contract.py.
+DOCUMENT_STATUS_QUEUED = "queued"
+DOCUMENT_STATUS_PROCESSING = "processing"
+DOCUMENT_STATUS_READY = "ready"
+DOCUMENT_STATUS_FAILED = "failed"
+
+#: States from which the status can still change on its own.
+PENDING_DOCUMENT_STATUSES = frozenset({DOCUMENT_STATUS_QUEUED, DOCUMENT_STATUS_PROCESSING})
+#: Every value the status column is allowed to hold.
+DOCUMENT_STATUSES = frozenset(
+    {
+        DOCUMENT_STATUS_QUEUED,
+        DOCUMENT_STATUS_PROCESSING,
+        DOCUMENT_STATUS_READY,
+        DOCUMENT_STATUS_FAILED,
+    }
+)
+
 
 class EmbeddingType(TypeDecorator[Any]):
     """pgvector in PostgreSQL, JSON text in SQLite.
