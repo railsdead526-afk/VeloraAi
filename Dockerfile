@@ -87,4 +87,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/v1/health || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers"]
+# Worker count is configurable because it is the difference between running
+# and being OOM-killed on a small instance: each worker holds ~110 MB. One
+# worker suits a 512 MB box; raise WEB_CONCURRENCY as the instance grows.
+ENV WEB_CONCURRENCY=1
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-1} --proxy-headers"]

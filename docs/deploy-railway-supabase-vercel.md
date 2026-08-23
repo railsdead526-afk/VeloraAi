@@ -76,6 +76,7 @@ python -m scripts.generate_keys
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | your mail provider |
 | `PAYMENT_PROVIDER` | `disabled` until you are ready to sell (see §5) |
 | `VAT_PERCENT` | `12` once registered as PKP, else `0` |
+| `WEB_CONCURRENCY` | worker count; each holds ~110 MB, so `1` on a 512 MB instance |
 | `APP_VERSION` / `GIT_SHA` | optional, shown at `/api/v1/info` |
 
 `DATABASE_POOL_SIZE=5` is deliberate: with 2 replicas plus overflow that is

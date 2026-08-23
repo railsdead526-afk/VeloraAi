@@ -6,6 +6,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The container hardcoded `--workers 2`. Measured against a running instance
+  each worker holds about 110 MB, so on a 512 MB host — the entry tier of most
+  providers — two workers plus the OS is close enough to the limit to invite an
+  OOM kill. Worker count now reads `WEB_CONCURRENCY`, defaulting to 1, and the
+  listen port reads `PORT`, which several platforms assign dynamically.
+
 ### Added
 
 - `scripts/preflight.py`, which validates a production configuration without
