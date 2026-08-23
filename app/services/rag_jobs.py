@@ -67,7 +67,7 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
         db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete(
             synchronize_session=False
         )
-        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings, strict=False)):
+        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
             db.add(
                 DocumentChunk(
                     document_id=document.id,
@@ -108,7 +108,10 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
         failed = db.query(Document).filter(Document.id == document_id).first()
         if failed is not None:
             failed.status = "failed"
-            failed.last_index_error = type(exc).__name__
+            # RAGError messages are written for the user and carry no provider
+            # internals; anything else is reported by type only.
+            detail = str(exc) if isinstance(exc, RAGError) and str(exc) else type(exc).__name__
+            failed.last_index_error = detail[:255]
             try:
                 db.commit()
             except Exception:

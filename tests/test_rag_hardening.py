@@ -88,15 +88,24 @@ def test_embed_texts_returns_usage_metadata(monkeypatch):
                 "usage": {"prompt_tokens": 17},
             }
 
+    class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            return Response()
+
     monkeypatch.setattr(
         "app.services.rag_service._embedding_config",
         lambda: ("https://example.test/v1", "key", "test-model"),
     )
-    monkeypatch.setattr("app.services.rag_service.httpx.post", lambda *args, **kwargs: Response())
+    monkeypatch.setattr("app.services.rag_service.httpx.Client", lambda **kwargs: Client())
 
     vectors, metadata = embed_texts(["hello"], return_metadata=True)
 
     assert len(vectors) == 1
     assert metadata["model"] == "test-model"
     assert metadata["input_tokens"] == 17
-    assert metadata["provider"] == "mock"

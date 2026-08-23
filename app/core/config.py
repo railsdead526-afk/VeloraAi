@@ -58,6 +58,9 @@ class Settings:
     embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "").rstrip("/")
     embedding_api_key = os.getenv("EMBEDDING_API_KEY", "")
     embedding_dimensions = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
+    #: Inputs per embeddings request. Providers cap both the array length and the
+    #: token count of a single call, so long documents must be sent in batches.
+    embedding_batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "96"))
     ai_timeout_seconds = float(os.getenv("AI_TIMEOUT_SECONDS", "45"))
     ai_max_history_messages = int(os.getenv("AI_MAX_HISTORY_MESSAGES", "30"))
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
@@ -141,6 +144,8 @@ class Settings:
             )
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
+        if self.embedding_batch_size < 1 or self.embedding_batch_size > 2048:
+            raise RuntimeError("EMBEDDING_BATCH_SIZE must be between 1 and 2048")
         if self.payment_timeout_seconds <= 0:
             raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.pro_price_idr < 0 or self.max_price_idr < 0:
