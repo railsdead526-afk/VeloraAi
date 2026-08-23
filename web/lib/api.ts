@@ -1,4 +1,7 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+// `??` not `||`: an empty value means "same origin", which is what you want
+// when the app is served behind a proxy that forwards /api to the backend.
+// With `||`, an intentional empty string silently fell back to localhost.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000'
 
 const ACCESS_TOKEN_KEY = 'velora_access_token'
 const REFRESH_TOKEN_KEY = 'velora_refresh_token'
