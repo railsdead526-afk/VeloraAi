@@ -197,7 +197,26 @@ integration rather than against assumptions.
 
 ---
 
-## 6. Order of operations
+## 6. Check the configuration before deploying
+
+`Settings.validate()` refuses to boot on an unsafe configuration, but it stops
+at the **first** problem. On Railway that means deploy, read one error, fix,
+redeploy — once per mistake.
+
+Check everything at once instead, locally:
+
+```bash
+python -m scripts.preflight --env-file .env
+```
+
+It reports every blocking problem in one pass, including the traps specific to
+this stack: Supabase's IPv6-only direct endpoint, a trailing slash in
+`CORS_ORIGINS`, a scheme in `TRUSTED_HOSTS`.
+
+A test asserts the script and the runtime validator agree, so a configuration
+the script passes will boot.
+
+## 7. Order of operations
 
 1. Supabase SQL (extension + schema)
 2. Railway web service + Redis → `/ready` returns 200
@@ -206,7 +225,7 @@ integration rather than against assumptions.
 5. Midtrans keys + webhook URL → one sandbox payment end to end
 6. Branch protection on `main`, and make the repository private
 
-## 7. Back up the encryption key now
+## 8. Back up the encryption key now
 
 `CREDENTIAL_ENCRYPTION_KEYS` exists only in Railway's variable store. **A
 database restore without it leaves every user's connected integration

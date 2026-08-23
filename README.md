@@ -241,6 +241,7 @@ and a container build scanned with Trivy.
 
 ```bash
 python -m scripts.generate_keys            # bootstrap secrets
+python -m scripts.preflight --env-file .env  # check a production config
 python -m scripts.run_maintenance          # hourly: expiry, purge, gauges
 python -m scripts.rotate_credential_keys   # zero-downtime key rotation
 ```

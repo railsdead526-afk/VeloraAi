@@ -6,6 +6,15 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/preflight.py`, which validates a production configuration without
+  booting the app. `Settings.validate()` stops at the first problem, so on a
+  hosted platform each mistake costs a redeploy; this reports all of them in
+  one pass, including stack-specific traps like Supabase's IPv6-only direct
+  endpoint, a trailing slash in `CORS_ORIGINS`, or a scheme in `TRUSTED_HOSTS`.
+  A test asserts the script and the runtime validator do not drift.
+
 ### Security
 
 - **Embedding spend had no ceiling.** Usage was written to `embedding_usage`

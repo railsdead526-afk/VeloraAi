@@ -161,3 +161,111 @@ def test_nonsensical_values_are_refused_everywhere(attribute, value):
     setattr(config, attribute, value)
     with pytest.raises(RuntimeError):
         config.validate()
+
+
+# --------------------------------------------------------------------------- #
+# Pre-flight
+#
+# Settings.validate() stops at the first problem, which on a hosted platform
+# means a slow deploy-fail-fix loop. The pre-flight script reports everything
+# at once, from outside the app.
+# --------------------------------------------------------------------------- #
+
+
+def _valid_production_env() -> dict[str, str]:
+    from app.core.crypto import generate_key
+
+    return {
+        "APP_ENV": "production",
+        "SECRET_KEY": "s" * 64,
+        "CREDENTIAL_ENCRYPTION_KEYS": generate_key(),
+        "DATABASE_URL": "postgresql://u:p@aws-0-ap.pooler.supabase.com:5432/postgres",
+        "DATABASE_SCHEMA": "velora",
+        "RATE_LIMIT_STORAGE_URI": "redis://localhost:6379/0",
+        "CORS_ORIGINS": "https://app.example.com",
+        "TRUSTED_HOSTS": "api.example.com",
+        "FRONTEND_BASE_URL": "https://app.example.com",
+        "REQUIRE_EMAIL_VERIFICATION": "true",
+        "METRICS_TOKEN": "scrape",
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_FROM": "no-reply@example.com",
+        "AI_PROVIDER": "openai",
+        "OPENAI_API_KEY": "sk-test",
+        "PAYMENT_PROVIDER": "disabled",
+    }
+
+
+def _preflight(env: dict[str, str]) -> list[tuple[str, str, str]]:
+    from scripts.preflight import _problems
+
+    return _problems(env)
+
+
+def _failed_keys(env: dict[str, str]) -> set[str]:
+    from scripts.preflight import FAIL
+
+    return {key for level, key, _ in _preflight(env) if level == FAIL}
+
+
+def test_preflight_passes_a_valid_production_env():
+    assert _failed_keys(_valid_production_env()) == set()
+
+
+def test_preflight_catches_the_supabase_ipv6_endpoint():
+    """The direct endpoint is unreachable from Railway and fails opaquely."""
+    env = _valid_production_env()
+    env["DATABASE_URL"] = "postgresql://u:p@db.abcdef.supabase.co:5432/postgres"
+    assert "DATABASE_URL" in _failed_keys(env)
+
+
+def test_preflight_catches_a_trailing_slash_in_cors():
+    """Origins are compared exactly, so a trailing slash silently blocks the UI."""
+    env = _valid_production_env()
+    env["CORS_ORIGINS"] = "https://app.example.com/"
+    assert "CORS_ORIGINS" in _failed_keys(env)
+
+
+def test_preflight_catches_a_url_in_trusted_hosts():
+    env = _valid_production_env()
+    env["TRUSTED_HOSTS"] = "https://api.example.com"
+    assert "TRUSTED_HOSTS" in _failed_keys(env)
+
+
+def test_preflight_reports_every_problem_at_once():
+    """The whole point: one pass instead of one redeploy per mistake."""
+    env = _valid_production_env()
+    env["SECRET_KEY"] = "short"
+    env["DATABASE_SCHEMA"] = "public"
+    env["RATE_LIMIT_STORAGE_URI"] = "memory://"
+    env["AI_PROVIDER"] = "mock"
+    assert {
+        "SECRET_KEY",
+        "DATABASE_SCHEMA",
+        "RATE_LIMIT_STORAGE_URI",
+        "AI_PROVIDER",
+    } <= _failed_keys(env)
+
+
+def test_preflight_skips_gates_outside_production():
+    env = {"APP_ENV": "development"}
+    assert _failed_keys(env) == set()
+
+
+def test_preflight_requires_payment_config_only_when_selling():
+    env = _valid_production_env()
+    env["PAYMENT_PROVIDER"] = "midtrans"
+    failures = _failed_keys(env)
+    assert "MIDTRANS_SERVER_KEY" in failures
+    assert "PRO_PRICE_IDR" in failures
+
+
+def test_preflight_agrees_with_the_runtime_validator():
+    """The two must not drift: a config the script passes should boot."""
+    import os
+    from unittest.mock import patch
+
+    from app.core.config import Settings
+
+    env = _valid_production_env()
+    with patch.dict(os.environ, env, clear=True):
+        Settings().validate()
