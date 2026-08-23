@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import AccountPanel from './AccountPanel'
 import DocumentsPanel from './DocumentsPanel'
 import IntegrationsPanel from './IntegrationsPanel'
+import { AgentEventParser, type AgentEvent } from '../../lib/stream'
 import {
   MIN_PASSWORD_LENGTH,
   clearAuthToken,
@@ -139,50 +140,62 @@ export default function Chat() {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    const parser = new AgentEventParser()
     const assistantPlaceholderId = -(Date.now() + 1)
     let assistantId = assistantPlaceholderId
     let assistantContent = ''
     let assistantStarted = false
-    let buffer = ''
     let confirmationRequired = false
     let confirmationToolName = ''
     let confirmationToolCallId = ''
     let confirmationToken = ''
+    let streamError: Error | null = null
 
     setMessages((current) => [...current.filter((message) => message.id !== userMessage.id), userMessage])
 
-    const processLine = (line: string) => {
-      if (!line.startsWith('data: ')) return
-      const payload = JSON.parse(line.slice(6)) as {
-        type?: 'token' | 'tool_start' | 'tool_confirmation_required' | 'tool_end' | 'done' | 'error'
-        content?: string
-        detail?: string
-        message_id?: number
-        name?: string
-        tool_call_id?: string
-        confirmation_token?: string
+    // Committing every token straight to React state re-renders the whole
+    // transcript per token. A long reply on a mid-range phone spends more time
+    // rendering than the model spends generating, so tokens are batched and
+    // flushed at most once per animation frame.
+    let pendingFrame: number | null = null
+    const cancelFrame = () => {
+      if (pendingFrame !== null) {
+        cancelAnimationFrame(pendingFrame)
+        pendingFrame = null
       }
+    }
+    const commitContent = () => {
+      const content = assistantContent
+      setMessages((current) =>
+        current.map((message) => (message.id === assistantId ? { ...message, content } : message)),
+      )
+    }
+    const scheduleCommit = () => {
+      if (pendingFrame !== null) return
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null
+        commitContent()
+      })
+    }
 
+    const processEvent = (payload: AgentEvent) => {
       if (payload.type === 'token' && payload.content) {
         assistantContent += payload.content
         if (!assistantStarted) {
           assistantStarted = true
+          const content = assistantContent
           setMessages((current) => [
             ...current,
             {
               id: assistantPlaceholderId,
               conversation_id: userMessage.conversation_id,
               role: 'assistant',
-              content: assistantContent,
+              content,
               created_at: new Date().toISOString(),
             },
           ])
         } else {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantId ? { ...message, content: assistantContent } : message,
-            ),
-          )
+          scheduleCommit()
         }
       }
 
@@ -201,29 +214,42 @@ export default function Chat() {
       if (payload.type === 'tool_end') setToolActivity('')
 
       if (payload.type === 'done' && payload.message_id) {
-        assistantId = payload.message_id
+        const resolvedId = payload.message_id
         setMessages((current) =>
           current.map((message) =>
-            message.id === assistantPlaceholderId ? { ...message, id: assistantId } : message,
+            message.id === assistantPlaceholderId ? { ...message, id: resolvedId } : message,
           ),
         )
+        assistantId = resolvedId
       }
 
-      if (payload.type === 'error') throw new Error(payload.detail || 'AI request failed')
-    }
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        const normalized = line.trim()
-        if (normalized) processLine(normalized)
+      // Recorded rather than thrown so the reader is still drained and released.
+      if (payload.type === 'error') {
+        streamError = new Error(payload.detail || 'AI request failed')
       }
     }
-    if (buffer.trim()) processLine(buffer.trim())
+
+    try {
+      while (!streamError) {
+        const { done, value } = await reader.read()
+        if (done) break
+        for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+          processEvent(event)
+        }
+      }
+      if (!streamError) {
+        for (const event of parser.flush()) processEvent(event)
+      }
+    } finally {
+      cancelFrame()
+      // Land whatever the last frame did not get to before returning.
+      if (assistantStarted) commitContent()
+      // Without this an aborted or failed stream leaves the body unread and the
+      // connection open until garbage collection.
+      await reader.cancel().catch(() => undefined)
+    }
+
+    if (streamError) throw streamError
 
     return {
       confirmationRequired,
@@ -322,6 +348,9 @@ export default function Chat() {
     } catch (sendError) {
       console.error(sendError)
       setError(sendError instanceof Error ? sendError.message : 'Failed to send message')
+      // Hand the text back rather than making the user retype it, but never
+      // clobber something they have already started typing since.
+      setInput((current) => (current.trim() ? current : content))
     } finally {
       abortRef.current = null
       setToolActivity('')

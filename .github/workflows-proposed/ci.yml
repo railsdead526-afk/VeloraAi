@@ -187,6 +187,8 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
       - run: npm run lint
+      - name: Unit tests
+        run: npm test
       - run: npm run build
 
   docker:
