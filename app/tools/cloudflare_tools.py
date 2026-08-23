@@ -2,6 +2,7 @@ from typing import Any
 from urllib.parse import quote
 
 from app.tools.credentials import resolve_credential
+from app.tools.identifiers import validate_identifier
 from app.tools.providers import ToolProviderError, _request
 
 
@@ -10,17 +11,14 @@ def _token() -> str:
 
 
 def _zone(arguments: dict[str, Any]) -> str:
-    zone = str(arguments.get("zone_id", "")).strip()
-    if not zone:
-        raise ToolProviderError("zone_id is required")
-    return zone
+    return validate_identifier(str(arguments.get("zone_id", "")), field="zone_id")
 
 
 def cloudflare_list_dns_records(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     zone = _zone(arguments)
     query = str(arguments.get("name", "")).strip()
-    url = f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records?per_page=100"
+    url = f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records?per_page=100"
     if query:
         url += f"&name={quote(query, safe='')}"
     return _request("GET", url, token=token)
@@ -47,7 +45,7 @@ def cloudflare_create_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
         payload["priority"] = int(arguments.get("priority", 10))
     return _request(
         "POST",
-        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records",
+        f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records",
         token=token,
         json=payload,
     )
@@ -56,9 +54,7 @@ def cloudflare_create_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
 def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     zone = _zone(arguments)
-    record = str(arguments.get("record_id", "")).strip()
-    if not record:
-        raise ToolProviderError("record_id is required")
+    record = validate_identifier(str(arguments.get("record_id", "")), field="record_id")
     payload: dict[str, Any] = {
         key: arguments[key]
         for key in ("type", "name", "content", "ttl", "proxied")
@@ -70,7 +66,7 @@ def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
         raise ToolProviderError("at least one DNS field is required")
     return _request(
         "PATCH",
-        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records/{quote(record, safe='')}",
+        f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records/{record}",
         token=token,
         json=payload,
     )
@@ -79,11 +75,9 @@ def cloudflare_update_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
 def cloudflare_delete_dns_record(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     zone = _zone(arguments)
-    record = str(arguments.get("record_id", "")).strip()
-    if not record:
-        raise ToolProviderError("record_id is required")
+    record = validate_identifier(str(arguments.get("record_id", "")), field="record_id")
     return _request(
         "DELETE",
-        f"https://api.cloudflare.com/client/v4/zones/{quote(zone, safe='')}/dns_records/{quote(record, safe='')}",
+        f"https://api.cloudflare.com/client/v4/zones/{zone}/dns_records/{record}",
         token=token,
     )

@@ -5,6 +5,12 @@ from urllib.parse import quote
 import httpx
 
 from app.tools.credentials import resolve_credential
+from app.tools.identifiers import (
+    encode_repository_path,
+    validate_identifier,
+    validate_ref,
+    validate_repository,
+)
 from app.tools.providers import ToolProviderError, _request
 
 
@@ -13,10 +19,7 @@ def _token() -> str:
 
 
 def _repo(arguments: dict[str, Any]) -> str:
-    repo = str(arguments.get("repository", "")).strip()
-    if repo.count("/") != 1:
-        raise ToolProviderError("repository must use owner/repository format")
-    return repo
+    return validate_repository(str(arguments.get("repository", "")))
 
 
 def github_search_code(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -75,13 +78,11 @@ def github_list_pull_requests(arguments: dict[str, Any]) -> dict[str, Any]:
 def github_create_branch(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     repo = _repo(arguments)
-    name = str(arguments.get("name", "")).strip()
-    source = str(arguments.get("source", "main")).strip()
-    if not name:
-        raise ToolProviderError("name is required")
+    name = validate_ref(str(arguments.get("name", "")), field="name")
+    source = validate_ref(str(arguments.get("source", "main")), field="source")
     source_data = _request(
         "GET",
-        f"https://api.github.com/repos/{repo}/git/ref/heads/{quote(source, safe='/-._')}",
+        f"https://api.github.com/repos/{repo}/git/ref/heads/{quote(source, safe='')}",
         token=token,
     )
     sha = (source_data.get("object") or {}).get("sha")
@@ -98,13 +99,12 @@ def github_create_branch(arguments: dict[str, Any]) -> dict[str, Any]:
 def github_write_file(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     repo = _repo(arguments)
-    path = str(arguments.get("path", "")).strip().lstrip("/")
+    encoded_path = encode_repository_path(str(arguments.get("path", "")))
     content = arguments.get("content")
-    branch = str(arguments.get("branch", "main")).strip()
+    branch = validate_ref(str(arguments.get("branch", "main")))
     message = str(arguments.get("message", "Update file")).strip()
-    if not path or not isinstance(content, str):
-        raise ToolProviderError("path and string content are required")
-    encoded_path = quote(path, safe="/")
+    if not isinstance(content, str):
+        raise ToolProviderError("string content is required")
     existing_sha = None
     try:
         response = httpx.get(
@@ -205,12 +205,10 @@ def github_get_pr_comments(arguments: dict[str, Any]) -> dict[str, Any]:
 def github_get_commit_status(arguments: dict[str, Any]) -> dict[str, Any]:
     token = _token()
     repo = _repo(arguments)
-    sha = str(arguments.get("sha", "")).strip()
-    if not sha:
-        raise ToolProviderError("sha is required")
+    sha = validate_identifier(str(arguments.get("sha", "")), field="sha")
     return _request(
         "GET",
-        f"https://api.github.com/repos/{repo}/commits/{quote(sha, safe='')}/status",
+        f"https://api.github.com/repos/{repo}/commits/{sha}/status",
         token=token,
     )
 

@@ -2,6 +2,7 @@ from typing import Any
 
 from app.services.supabase_sql_policy import validate_read_only_sql
 from app.tools.credentials import resolve_credential
+from app.tools.identifiers import validate_identifier
 from app.tools.providers import ToolProviderError, _request
 
 
@@ -10,10 +11,7 @@ def _token() -> str:
 
 
 def _project(arguments: dict[str, Any]) -> str:
-    project = str(arguments.get("project_id", "")).strip()
-    if not project:
-        raise ToolProviderError("project_id is required")
-    return project
+    return validate_identifier(str(arguments.get("project_id", "")), field="project_id")
 
 
 def supabase_list_projects(_: dict[str, Any]) -> dict[str, Any]:

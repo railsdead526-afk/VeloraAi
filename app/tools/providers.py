@@ -4,6 +4,7 @@ import httpx
 
 from app.tools.credentials import resolve_credential
 from app.tools.errors import ToolProviderError
+from app.tools.identifiers import encode_repository_path, validate_repository
 
 __all__ = [
     "ToolProviderError",
@@ -46,10 +47,8 @@ def github_list_repositories(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def github_read_file(arguments: dict[str, Any]) -> dict[str, Any]:
     token = resolve_credential("github")
-    repo = str(arguments.get("repository", "")).strip()
-    path = str(arguments.get("path", "")).strip().lstrip("/")
-    if not repo or not path or repo.count("/") != 1:
-        raise ToolProviderError("repository must use owner/repository format and path is required")
+    repo = validate_repository(str(arguments.get("repository", "")))
+    path = encode_repository_path(str(arguments.get("path", "")))
     data = _request("GET", f"https://api.github.com/repos/{repo}/contents/{path}", token=token)
     return {
         "name": data.get("name"),
