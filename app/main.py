@@ -24,7 +24,7 @@ if settings.cors_origins:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-CSRF-Token"],
     )
 
 
@@ -42,6 +42,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error", "request_id": request_id},
         headers={"X-Request-ID": request_id},
     )
+
+
+@app.middleware("http")
+async def request_size_limit(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            request_size = int(content_length)
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+        if request_size > settings.max_request_body_bytes:
+            return JSONResponse(status_code=413, content={"detail": "Request body is too large"})
+    return await call_next(request)
 
 
 @app.middleware("http")

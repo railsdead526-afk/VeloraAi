@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -11,7 +11,7 @@ from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentResponse, DocumentSearchRequest, DocumentSearchResult
 from app.services.document_ingestion import DocumentExtractionError, extract_text
 from app.services.embedding_usage_service import embedding_usage_summary
-from app.services.rag_jobs import process_document_index
+from app.services.rag_jobs import process_document_index  # noqa: F401 - compatibility export for integrations/tests
 from app.services.rag_service import (
     DocumentIndexInProgressError,
     DuplicateDocumentError,
@@ -30,7 +30,6 @@ router = APIRouter(prefix="/rag", tags=["rag"])
 def create_document(
     request: Request,
     payload: DocumentCreate,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -43,7 +42,6 @@ def create_document(
             source=payload.source,
             mime_type=payload.mime_type,
         )
-        background_tasks.add_task(process_document_index, document.id)
         return document
     except DuplicateDocumentError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -55,7 +53,6 @@ def create_document(
 @limiter.limit(settings.rate_limit_chat)
 def upload_document(
     request: Request,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -73,7 +70,6 @@ def upload_document(
             source=source,
             mime_type=mime_type,
         )
-        background_tasks.add_task(process_document_index, document.id)
         return document
     except HTTPException:
         raise
@@ -104,13 +100,11 @@ def get_embedding_usage(db: Session = Depends(get_db), current_user=Depends(get_
 @router.post("/documents/{document_id}/reindex", response_model=DocumentResponse)
 def reindex_one_document(
     document_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     try:
         document = reindex_document(db, user_id=current_user.id, document_id=document_id)
-        background_tasks.add_task(process_document_index, document.id)
         return document
     except DocumentIndexInProgressError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
