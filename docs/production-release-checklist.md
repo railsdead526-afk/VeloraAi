@@ -20,7 +20,7 @@ Release VeloraAi hanya boleh dilanjutkan setelah semua item **Required** selesai
 | RAG worker | Proses `python -m app.worker` berjalan sebagai service terpisah dengan database/provider secret yang sama. |
 | Sandbox | Sandbox service berada pada host/runtime terpisah; network isolation, capability drop, no-new-privileges, read-only root, dan resource limits diverifikasi dari runtime, bukan hanya Dockerfile. |
 | Database | PostgreSQL schema benar, Alembic dijalankan sebelum traffic, dan `/api/v1/ready` mengembalikan `status=ready`. |
-| Rate limit | `RATE_LIMIT_STORAGE_URI` menunjuk Redis/shared store; behavior diuji dari minimal dua web instance bila autoscaling aktif. |
+| Rate limit | `RATE_LIMIT_STORAGE_URI` menunjuk Redis/shared store; `TRUSTED_PROXY_IPS` hanya berisi proxy network yang terdokumentasi; behavior diuji dari minimal dua web instance bila autoscaling aktif. |
 | Secrets | API key, JWT secret, Midtrans key, sandbox token, dan provider credentials berasal dari deployment secret manager. Tidak ada secret di Git. |
 
 ## Non-destructive smoke test
