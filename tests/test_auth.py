@@ -139,3 +139,44 @@ def test_premium_only_allows_pro_and_denies_free():
     )
     assert response.status_code == 200
     assert response.json()["role"] == "pro"
+
+
+def test_login_uses_cookie_auth_with_csrf_and_logout():
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": "cookie-user@example.com", "password": "12345678"},
+    )
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "cookie-user@example.com", "password": "12345678"},
+    )
+    assert login_response.status_code == 200
+    assert login_response.cookies.get("velora_access_token")
+    csrf_token = login_response.cookies.get("velora_csrf")
+    assert csrf_token
+
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+    missing_csrf = client.post(
+        "/api/v1/conversations",
+        json={"title": "CSRF protected"},
+    )
+    assert missing_csrf.status_code == 403
+
+    created = client.post(
+        "/api/v1/conversations",
+        json={"title": "CSRF protected"},
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert created.status_code == 201
+
+    assert client.post("/api/v1/auth/logout").status_code == 204
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_password_length_is_bounded():
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "long-password@example.com", "password": "x" * 129},
+    )
+    assert response.status_code == 422

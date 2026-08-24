@@ -4,15 +4,15 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import {
   clearAuthToken,
   createConversation,
-  getAuthToken,
   getCurrentUser,
+  getCsrfToken,
   getMessages,
   getStreamUrl,
   listConversations,
   login,
   register,
-  setAuthToken,
   subscribeAuthExpired,
+  logout as logoutApi,
   type Conversation,
   type Message,
   type User,
@@ -56,10 +56,6 @@ export default function Chat() {
 
   useEffect(() => {
     const bootstrap = async () => {
-      if (!getAuthToken()) {
-        setAuthLoading(false)
-        return
-      }
       try {
         setUser(await getCurrentUser())
         const conversations = await listConversations()
@@ -230,9 +226,10 @@ export default function Chat() {
 
     const response = await fetch(getStreamUrl(conversationId), {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAuthToken()}`,
+        ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken() as string } : {}),
       },
       body: JSON.stringify({
         content,
@@ -352,10 +349,10 @@ export default function Chat() {
     setAuthLoading(true)
     try {
       if (authMode === 'login') {
-        setAuthToken((await login(email.trim(), password)).access_token)
+        await login(email.trim(), password)
       } else {
         await register(email.trim(), password)
-        setAuthToken((await login(email.trim(), password)).access_token)
+        await login(email.trim(), password)
       }
       setUser(await getCurrentUser())
       const conversations = await listConversations()
@@ -369,6 +366,7 @@ export default function Chat() {
   }
 
   const logout = () => {
+    void logoutApi()
     abortRef.current?.abort()
     clearAuthToken()
     setUser(null)
@@ -403,7 +401,7 @@ export default function Chat() {
           <h1 style={styles.title}>{authMode === 'login' ? 'Welcome back' : 'Create your workspace'}</h1>
           <p style={styles.muted}>{authMode === 'login' ? 'Sign in to continue.' : 'Create an account to start using VeloraAi.'}</p>
           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" type="email" autoComplete="email" style={styles.input} required />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={8} />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={8} maxLength={128} />
           {authError && <div style={styles.error}>{authError}</div>}
           <button type="submit" style={styles.primary}>{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
           <button type="button" onClick={() => setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))} style={styles.link}>

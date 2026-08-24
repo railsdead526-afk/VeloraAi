@@ -35,24 +35,34 @@ export interface ChatReplyResponse {
   assistant_message: Message
 }
 
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem('velora_access_token')
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null
+  const prefix = `${name}=`
+  const cookie = document.cookie.split('; ').find((item) => item.startsWith(prefix))
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null
 }
 
-function authHeaders(): HeadersInit {
-  const token = getToken()
+export function getCsrfToken(): string | null {
+  return getCookie('velora_csrf')
+}
+
+function authHeaders(method = 'GET'): HeadersInit {
+  const csrfToken = getCsrfToken()
   return {
     'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+      ? { 'X-CSRF-Token': csrfToken }
+      : {}),
   }
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = options.method || 'GET'
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
-      ...authHeaders(),
+      ...authHeaders(method),
       ...(options.headers || {}),
     },
   })
@@ -76,6 +86,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
     throw new Error(message)
   }
 
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
@@ -91,6 +102,15 @@ export async function register(email: string, password: string): Promise<User> {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: authHeaders('POST'),
+  })
+  clearAuthToken()
 }
 
 export async function getCurrentUser(): Promise<User> {
@@ -128,16 +148,19 @@ export function getStreamUrl(conversationId: number): string {
   return `${API_BASE_URL}/api/v1/conversations/${conversationId}/messages/stream`
 }
 
+// Kept as a compatibility shim for callers from the pre-cookie client.
 export function getAuthToken(): string | null {
-  return getToken()
+  return null
 }
 
-export function setAuthToken(token: string): void {
-  localStorage.setItem('velora_access_token', token)
+export function setAuthToken(_token: string): void {
+  void _token
+  // The server stores the token in an HttpOnly cookie during login.
 }
 
 export function clearAuthToken(): void {
-  localStorage.removeItem('velora_access_token')
+  // Remove a legacy token if an older client had stored one.
+  if (typeof window !== 'undefined') localStorage.removeItem('velora_access_token')
 }
 
 export function subscribeAuthExpired(listener: () => void): () => void {

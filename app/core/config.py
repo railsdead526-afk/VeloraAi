@@ -32,6 +32,10 @@ class Settings:
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
 
     document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    max_request_body_bytes = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(12 * 1024 * 1024)))
+    rag_worker_poll_seconds = float(os.getenv("RAG_WORKER_POLL_SECONDS", "5"))
+    rag_worker_batch_size = int(os.getenv("RAG_WORKER_BATCH_SIZE", "4"))
+    rag_processing_stale_seconds = int(os.getenv("RAG_PROCESSING_STALE_SECONDS", "900"))
 
     midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
     midtrans_client_key = os.getenv("MIDTRANS_CLIENT_KEY", "")
@@ -67,6 +71,14 @@ class Settings:
             raise RuntimeError("EMBEDDING_DIMENSIONS must remain 1536 until the database vector schema is migrated")
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
+        if self.max_request_body_bytes < self.document_max_upload_bytes:
+            raise RuntimeError("MAX_REQUEST_BODY_BYTES must be at least DOCUMENT_MAX_UPLOAD_BYTES")
+        if self.rag_worker_poll_seconds <= 0:
+            raise RuntimeError("RAG_WORKER_POLL_SECONDS must be greater than zero")
+        if self.rag_worker_batch_size < 1 or self.rag_worker_batch_size > 100:
+            raise RuntimeError("RAG_WORKER_BATCH_SIZE must be between 1 and 100")
+        if self.rag_processing_stale_seconds < 60:
+            raise RuntimeError("RAG_PROCESSING_STALE_SECONDS must be at least 60 seconds")
         if self.payment_timeout_seconds <= 0:
             raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.pro_price_idr < 0 or self.max_price_idr < 0:

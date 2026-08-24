@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -6,6 +7,7 @@ from app.models.document import Document
 from app.models.user import User
 from app.services.rag_jobs import process_document_index
 from app.services.rag_service import DuplicateDocumentError, RAGError, delete_document, ingest_text, reindex_document
+from app.worker import recover_stale_documents
 
 
 @pytest.fixture
@@ -54,6 +56,29 @@ def test_reindex_queues_and_job_rebuilds_chunks(db, users):
     db.refresh(document)
     assert document.status == "ready"
     assert document.chunks[0].content == "changed content"
+
+
+def test_recover_stale_processing_document(db, users):
+    owner, _ = users
+    document = Document(
+        user_id=owner.id,
+        name="stale.txt",
+        source="text",
+        mime_type="text/plain",
+        status="processing",
+        content_hash="stale-hash",
+        raw_text="stale document",
+        updated_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    db.add(document)
+    db.commit()
+
+    recovered = recover_stale_documents(db, now=datetime.now(timezone.utc))
+
+    db.refresh(document)
+    assert recovered == 1
+    assert document.status == "queued"
+    assert document.last_index_error == "recovered_after_worker_timeout"
 
 
 def test_delete_document_is_user_scoped(db, users):

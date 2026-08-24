@@ -9,10 +9,23 @@ function formatIdr(value) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
 }
 
+function getCookie(name) {
+  const prefix = `${name}=`;
+  const cookie = document.cookie.split("; ").find((item) => item.startsWith(prefix));
+  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
+}
+
+function authHeaders(method = "GET") {
+  const csrfToken = getCookie("velora_csrf");
+  return {
+    ...(method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+  };
+}
+
 async function loadConfig() {
-  const token = localStorage.getItem("access_token");
   const response = await fetch("/api/v1/payments/config", {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+    headers: authHeaders(),
   });
   if (!response.ok) throw new Error("Unable to load payment configuration");
   const config = await response.json();
@@ -22,17 +35,13 @@ async function loadConfig() {
 }
 
 async function startCheckout(plan) {
-  const token = localStorage.getItem("access_token");
-  if (!token) {
-    setStatus("Please sign in before checkout.", "error");
-    return;
-  }
   setStatus("Preparing secure checkout…");
   const response = await fetch("/api/v1/payments/create", {
     method: "POST",
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
+      ...authHeaders("POST"),
     },
     body: JSON.stringify({ plan }),
   });
