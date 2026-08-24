@@ -8,7 +8,12 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models.billing import Payment
-from app.schemas.payment import PaymentCreateRequest, PaymentCreateResponse
+from app.schemas.payment import (
+    PaymentCreateRequest,
+    PaymentCreateResponse,
+    RefundRequest,
+    RefundResponse,
+)
 from app.services.billing_service import (
     apply_payment_notification,
     create_payment_intent,
@@ -139,14 +144,26 @@ def payment_notification(request: Request, payload: dict, db: Session = Depends(
     return {"status": "ok"}
 
 
-@router.post("/{payment_id}/refund", dependencies=[Depends(require_roles("admin"))])
+@router.post(
+    "/{payment_id}/refund",
+    response_model=RefundResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 @limiter.limit("10/minute")
 def refund_payment(
     request: Request,
     payment_id: int,
+    payload: RefundRequest | None = None,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    """Refund a settled payment, in full or in part.
+
+    Partial refunds are driven by the amount already returned rather than by the
+    provider's refund status. Keying off the status meant the first partial
+    refund marked the payment as refunded, and every later call was rejected as
+    a duplicate even though money was still outstanding.
+    """
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if payment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
@@ -159,43 +176,68 @@ def refund_payment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"{provider.name} refunds are handled outside VeloraAi",
         )
-    if payment.status != "settlement":
+    if payment.status not in {"settlement", "partially_refunded"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Only settled payments can be refunded"
         )
-    if payment.refund_status in {"settlement", "200"}:
-        return {
-            "status": "already_refunded",
-            "payment_id": payment.id,
-            "refund_amount": payment.refund_amount,
-        }
 
-    refund_amount = payment.amount - payment.refund_amount
-    if refund_amount <= 0:
+    already_refunded = payment.refund_amount or 0
+    remaining = payment.amount - already_refunded
+    if remaining <= 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Payment has already been fully refunded"
         )
+
+    requested = payload.amount if payload and payload.amount is not None else remaining
+    if requested > remaining:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Refund exceeds the outstanding amount ({remaining})",
+        )
+
+    reason = (payload.reason if payload else None) or "VeloraAi admin refund"
     try:
         result = provider.refund(
             order_id=payment.provider_order_id,
-            amount=refund_amount,
-            reason="VeloraAi admin refund",
+            amount=requested,
+            reason=reason,
         )
     except PaymentProviderError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    payment.refund_amount = payment.refund_amount + refund_amount
     payment.refund_status = result.raw_status
     payment.refund_transaction_id = result.reference
+
     if result.outcome is PaymentOutcome.REFUNDED:
-        payment.refunded_at = payment.refunded_at or datetime.now(UTC)
-        payment.status = "refunded"
-        if payment.subscription is not None:
-            payment.subscription.status = "canceled"
-        sync_user_role(db, user_id=payment.user_id)
+        # Trust what the provider says it moved, not what we asked for.
+        settled_amount = result.amount if result.amount > 0 else requested
+        payment.refund_amount = already_refunded + settled_amount
+        fully_refunded = payment.refund_amount >= payment.amount
+        if fully_refunded:
+            payment.refunded_at = payment.refunded_at or datetime.now(UTC)
+            payment.status = "refunded"
+            # Entitlement only ends when the customer got all their money back.
+            # A partial refund - a pro-rata adjustment, say - must not cancel a
+            # subscription the customer is still paying for.
+            if payment.subscription is not None:
+                payment.subscription.status = "canceled"
+            sync_user_role(db, user_id=payment.user_id)
+        else:
+            payment.status = "partially_refunded"
+    else:
+        # The provider has not settled it; record nothing as returned yet.
+        settled_amount = 0
+        fully_refunded = False
+
     db.commit()
-    return {
-        "status": payment.refund_status,
-        "payment_id": payment.id,
-        "refund_amount": refund_amount,
-    }
+    db.refresh(payment)
+
+    refunded_total = payment.refund_amount or 0
+    return RefundResponse(
+        status=payment.refund_status or "pending",
+        payment_id=payment.id,
+        refund_amount=settled_amount,
+        refunded_total=refunded_total,
+        remaining=payment.amount - refunded_total,
+        fully_refunded=fully_refunded,
+    )
