@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import re
 from dotenv import load_dotenv
@@ -32,6 +33,11 @@ class Settings:
     ai_max_retries = int(os.getenv("AI_MAX_RETRIES", "2"))
 
     document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    max_request_body_bytes = int(os.getenv("MAX_REQUEST_BODY_BYTES", str(12 * 1024 * 1024)))
+    rag_worker_poll_seconds = float(os.getenv("RAG_WORKER_POLL_SECONDS", "5"))
+    rag_worker_batch_size = int(os.getenv("RAG_WORKER_BATCH_SIZE", "4"))
+    rag_processing_stale_seconds = int(os.getenv("RAG_PROCESSING_STALE_SECONDS", "900"))
+    rag_max_index_attempts = int(os.getenv("RAG_MAX_INDEX_ATTEMPTS", "3"))
 
     midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
     midtrans_client_key = os.getenv("MIDTRANS_CLIENT_KEY", "")
@@ -47,6 +53,7 @@ class Settings:
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
     rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
     cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+    trusted_proxy_ips = [value.strip() for value in os.getenv("TRUSTED_PROXY_IPS", "").split(",") if value.strip()]
 
     @property
     def is_production(self) -> bool:
@@ -67,12 +74,27 @@ class Settings:
             raise RuntimeError("EMBEDDING_DIMENSIONS must remain 1536 until the database vector schema is migrated")
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
+        if self.max_request_body_bytes < self.document_max_upload_bytes:
+            raise RuntimeError("MAX_REQUEST_BODY_BYTES must be at least DOCUMENT_MAX_UPLOAD_BYTES")
+        if self.rag_worker_poll_seconds <= 0:
+            raise RuntimeError("RAG_WORKER_POLL_SECONDS must be greater than zero")
+        if self.rag_worker_batch_size < 1 or self.rag_worker_batch_size > 100:
+            raise RuntimeError("RAG_WORKER_BATCH_SIZE must be between 1 and 100")
+        if self.rag_processing_stale_seconds < 60:
+            raise RuntimeError("RAG_PROCESSING_STALE_SECONDS must be at least 60 seconds")
+        if self.rag_max_index_attempts < 1 or self.rag_max_index_attempts > 10:
+            raise RuntimeError("RAG_MAX_INDEX_ATTEMPTS must be between 1 and 10")
         if self.payment_timeout_seconds <= 0:
             raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.pro_price_idr < 0 or self.max_price_idr < 0:
             raise RuntimeError("Plan prices cannot be negative")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
+        for proxy in self.trusted_proxy_ips:
+            try:
+                ipaddress.ip_network(proxy, strict=False)
+            except ValueError as exc:
+                raise RuntimeError(f"TRUSTED_PROXY_IPS contains an invalid IP or network: {proxy}") from exc
 
         if self.is_production:
             if self.database_schema == "public":

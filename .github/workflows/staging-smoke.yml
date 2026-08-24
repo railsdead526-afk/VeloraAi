@@ -1,0 +1,31 @@
+name: VeloraAi staging smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment label"
+        required: true
+        default: "staging"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VELORAAI_BASE_URL: ${{ secrets.VELORAAI_BASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Validate deployment URL
+        run: test -n "$VELORAAI_BASE_URL"
+      - name: Run non-destructive smoke test
+        run: python scripts/production_smoke_test.py "$VELORAAI_BASE_URL"

@@ -6,7 +6,6 @@ on:
       - main
       - audit/health-hardening
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -86,6 +85,8 @@ jobs:
         run: alembic upgrade head
       - name: Verify migration head
         run: alembic current
+      - name: Run backend tests against PostgreSQL
+        run: pytest -q tests --cov=app --cov-report=term-missing
 
   sandbox-service:
     runs-on: ubuntu-latest

@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from app.api.auth_cookies import clear_auth_cookies, issue_csrf_token, set_auth_cookies
 from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
 from app.core.rate_limit import limiter
@@ -32,7 +33,7 @@ def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db
 
 @router.post("/login", response_model=Token)
 @limiter.limit(settings.rate_limit_auth)
-def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
+def login(response: Response, request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
     user = authenticate_user(db, user_in.email, user_in.password)
     if not user:
         raise HTTPException(
@@ -41,11 +42,18 @@ def login(request: Request, user_in: UserLogin, db: Session = Depends(get_db)):
         )
 
     access_token = create_access_token(data={"sub": user.email})
+    set_auth_cookies(response, access_token, issue_csrf_token())
 
     return {
         "access_token": access_token,
         "token_type": "bearer",
     }
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response):
+    clear_auth_cookies(response)
+    return None
 
 
 @router.get("/me", response_model=UserResponse)

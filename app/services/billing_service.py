@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,7 +22,7 @@ def create_payment_intent(
     amount: int,
     provider: str = "midtrans",
 ) -> Payment:
-    order_id = f"velora-{user_id}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+    order_id = f"velora-{uuid4().hex}"
     payment = Payment(
         user_id=user_id,
         provider=provider,

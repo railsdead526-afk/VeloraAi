@@ -24,6 +24,7 @@ def test_create_pending_document_enforces_text_size_and_name(db, monkeypatch):
 
 
 def test_rag_index_failure_persists_failed_state_even_when_usage_record_fails(db, monkeypatch):
+    monkeypatch.setattr("app.services.rag_jobs.settings.rag_max_index_attempts", 1)
     user = User(email="rag-failure@example.com", hashed_password="hash", role="free")
     db.add(user)
     db.commit()

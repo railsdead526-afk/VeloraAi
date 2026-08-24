@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -6,6 +7,7 @@ from app.models.document import Document
 from app.models.user import User
 from app.services.rag_jobs import process_document_index
 from app.services.rag_service import DuplicateDocumentError, RAGError, delete_document, ingest_text, reindex_document
+from app.worker import recover_stale_documents
 
 
 @pytest.fixture
@@ -56,6 +58,29 @@ def test_reindex_queues_and_job_rebuilds_chunks(db, users):
     assert document.chunks[0].content == "changed content"
 
 
+def test_recover_stale_processing_document(db, users):
+    owner, _ = users
+    document = Document(
+        user_id=owner.id,
+        name="stale.txt",
+        source="text",
+        mime_type="text/plain",
+        status="processing",
+        content_hash="stale-hash",
+        raw_text="stale document",
+        updated_at=datetime.now(timezone.utc) - timedelta(hours=1),
+    )
+    db.add(document)
+    db.commit()
+
+    recovered = recover_stale_documents(db, now=datetime.now(timezone.utc))
+
+    db.refresh(document)
+    assert recovered == 1
+    assert document.status == "queued"
+    assert document.last_index_error == "recovered_after_worker_timeout"
+
+
 def test_delete_document_is_user_scoped(db, users):
     owner, other = users
     with patch("app.services.rag_service.embed_texts", return_value=[[0.0] * 1536]):
@@ -65,3 +90,36 @@ def test_delete_document_is_user_scoped(db, users):
         delete_document(db, user_id=owner.id, document_id=document.id)
 
     assert db.query(Document).filter(Document.id == document.id).first() is None
+
+
+def test_index_failure_retries_then_becomes_terminal(db, users, monkeypatch):
+    owner, _ = users
+    document = Document(
+        user_id=owner.id,
+        name="retry.txt",
+        source="text",
+        mime_type="text/plain",
+        status="queued",
+        content_hash="retry-hash",
+        raw_text="retry document",
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    monkeypatch.setattr("app.services.rag_jobs.settings.rag_max_index_attempts", 2)
+    monkeypatch.setattr(
+        "app.services.rag_jobs.embed_texts",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
+    )
+
+    process_document_index(document.id, db=db)
+    db.refresh(document)
+    assert document.status == "queued"
+    assert document.indexing_attempts == 1
+    assert document.last_index_error == "retry_RuntimeError"
+
+    process_document_index(document.id, db=db)
+    db.refresh(document)
+    assert document.status == "failed"
+    assert document.indexing_attempts == 2
+    assert document.last_index_error == "RuntimeError"

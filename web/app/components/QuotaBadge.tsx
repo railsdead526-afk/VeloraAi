@@ -15,7 +15,6 @@ export default function QuotaBadge() {
     let active = true
 
     const refresh = async () => {
-      if (!localStorage.getItem('velora_access_token')) return
       try {
         const current = await getCurrentUser()
         if (active) setUser(current)
