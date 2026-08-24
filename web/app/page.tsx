@@ -106,7 +106,10 @@ export default function Home() {
             <div className={styles.pilotBox}>
               <strong>Pilot Knowledge Workspace</strong>
               <span>Setup sederhana, satu use case, dan evaluasi bersama setelah 30 hari.</span>
-              <a className={styles.pilotButton} href="mailto:hello@velora.ai?subject=Velora%20pilot">Bicarakan pilot →</a>
+              <div className={styles.pilotActions}>
+                <a className={styles.pilotButton} href="mailto:railsdead526@gmail.com?subject=Velora%20pilot">Email saya →</a>
+                <a className={styles.pilotButton} href="https://wa.me/6285707203681?text=Halo%2C%20saya%20tertarik%20dengan%20pilot%20Velora">WhatsApp →</a>
+              </div>
             </div>
           </div>
         </section>

@@ -423,9 +423,15 @@
   line-height: 1.5;
 }
 
+.pilotActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 .pilotButton {
   display: inline-flex;
-  margin-top: 22px;
   padding: 13px 17px;
   border-radius: 999px;
   background: #17110b;
