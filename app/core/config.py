@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import re
 from dotenv import load_dotenv
@@ -51,6 +52,7 @@ class Settings:
     rate_limit_chat = os.getenv("RATE_LIMIT_CHAT", "30/minute")
     rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
     cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+    trusted_proxy_ips = [value.strip() for value in os.getenv("TRUSTED_PROXY_IPS", "").split(",") if value.strip()]
 
     @property
     def is_production(self) -> bool:
@@ -85,6 +87,11 @@ class Settings:
             raise RuntimeError("Plan prices cannot be negative")
         if self.ai_provider not in {"mock", "openai", "llama"}:
             raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
+        for proxy in self.trusted_proxy_ips:
+            try:
+                ipaddress.ip_network(proxy, strict=False)
+            except ValueError as exc:
+                raise RuntimeError(f"TRUSTED_PROXY_IPS contains an invalid IP or network: {proxy}") from exc
 
         if self.is_production:
             if self.database_schema == "public":
