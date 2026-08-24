@@ -17,3 +17,11 @@ htmlcov
 .gitignore
 README.md
 tests
+.ruff_cache
+.mypy_cache
+docs
+web
+sandbox-service
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md

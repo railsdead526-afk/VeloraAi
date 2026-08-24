@@ -1,5 +1,5 @@
-from app.tools.supabase_tools import supabase_execute_sql
 from app.tools.providers import ToolProviderError
+from app.tools.supabase_tools import supabase_execute_sql
 
 
 def test_supabase_sql_requires_project_id(monkeypatch):

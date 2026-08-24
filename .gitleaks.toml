@@ -1,0 +1,52 @@
+# Gitleaks configuration for VeloraAi.
+#
+# The default ruleset is kept in full. This file only allowlists specific,
+# named literals that are provably synthetic. It deliberately does NOT
+# allowlist whole paths such as `tests/` — a real credential pasted into a test
+# file must still fail the build.
+#
+# Every entry below must be justified. If you add one, say why.
+#
+# Verify locally before pushing:
+#   gitleaks detect --redact -v
+
+title = "VeloraAi"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic fixtures and documented non-secret constants"
+# Match against the whole line so both `KEY: value` and `"password": "value"`
+# shapes are covered.
+regexTarget = "line"
+
+regexes = [
+  # CI-only signing key. Published in .github/workflows/ci.yml on purpose: the
+  # test suite needs a >=32 character SECRET_KEY, and every CI database is
+  # ephemeral. It grants access to nothing.
+  '''ci-test-secret-key-012345678901234567890123''',
+
+  # Passwords invented for the auth test-suite. They exist only to satisfy the
+  # 12-character, 3-character-class policy in app/schemas/user.py.
+  '''Str0ng!Passw0rd''',
+  '''Brand-N3w-Secret''',
+  '''An0ther!Secret''',
+  '''Corr3ct-Horse-Battery''',
+  '''Wr0ng!Password''',
+
+  # A passlib pbkdf2-sha256 digest of the string "secret123", used to prove
+  # that pre-Argon2 hashes still verify. A hash, not a credential.
+  '''\$pbkdf2-sha256\$29000\$''',
+
+  # Sandbox service test token, see sandbox-service/tests.
+  '''SANDBOX_SERVICE_TOKEN: test-token''',
+]
+
+paths = [
+  # Documents the shape of every configuration key. All values are empty by
+  # design, and CI would fail production validation if one were not.
+  '''^\.env\.example$''',
+  # Placeholder-only legal drafts.
+  '''^docs/legal/''',
+]

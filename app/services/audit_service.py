@@ -27,7 +27,9 @@ def record_audit_event(
             resource_type=resource_type,
             resource_id=resource_id,
             status=status,
-            metadata_json=json.dumps(dict(metadata or {}), ensure_ascii=False, separators=(",", ":")),
+            metadata_json=json.dumps(
+                dict(metadata or {}), ensure_ascii=False, separators=(",", ":")
+            ),
         )
     )
     if commit:

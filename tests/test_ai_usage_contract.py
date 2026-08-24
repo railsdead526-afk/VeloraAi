@@ -11,7 +11,8 @@ async def test_mock_stream_populates_usage_sink():
     try:
         usage = {}
         chunks = [
-            chunk async for chunk in stream_ai_reply_from_history(
+            chunk
+            async for chunk in stream_ai_reply_from_history(
                 [{"role": "user", "content": "Halo"}],
                 usage,
             )

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -28,6 +29,7 @@ from app.services.quota_service import (
 )
 from app.services.rag_service import RAGError
 from app.tools.bootstrap import get_registry
+from app.tools.credentials import user_credential_scope
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -80,9 +82,16 @@ def stream_native_message(
 
     async def event_stream():
         chunks: list[str] = []
-        usage = {"input_tokens": None, "output_tokens": None, "model": None}
+        # Populated from provider "done" events, so the value types are only
+        # known at runtime.
+        usage: dict[str, Any] = {"input_tokens": None, "output_tokens": None, "model": None}
         confirmation_required = False
+        credential_binding = None
         try:
+            # Bind this user's own third-party credentials for the whole
+            # stream. Tools must never authenticate as the operator.
+            credential_binding = user_credential_scope(user_id)
+            credential_binding.__enter__()
             if settings.ai_provider in {"openai", "llama"}:
                 async for event in stream_ai_reply_with_tools(
                     history_payload,
@@ -257,6 +266,9 @@ def stream_native_message(
                 resource_id=str(conversation_id),
             )
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Unable to complete the request'}, ensure_ascii=False)}\n\n"
+        finally:
+            if credential_binding is not None:
+                credential_binding.__exit__(None, None, None)
 
     return StreamingResponse(
         event_stream(),

@@ -1,17 +1,20 @@
 from unittest.mock import patch
 
-from app.models.billing import Payment, Subscription
+from app.models.billing import Payment
 from app.models.user import User
 from app.tools.bootstrap import get_registry
 from app.tools.executor import ToolExecutionError, execute_tool
 from tests.conftest import TestingSessionLocal, client
 
 
-def _register_and_login(email: str, password: str = "securepass123") -> dict:
-    assert client.post(
-        "/api/v1/auth/register",
-        json={"email": email, "password": password},
-    ).status_code == 201
+def _register_and_login(email: str, password: str = "Str0ng!Passw0rd") -> dict:
+    assert (
+        client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        ).status_code
+        == 201
+    )
     response = client.post(
         "/api/v1/auth/login",
         json={"email": email, "password": password},
@@ -42,23 +45,35 @@ def test_conversation_idor_denied():
     assert created.status_code == 201
     conversation_id = created.json()["id"]
 
-    assert client.get(
-        f"/api/v1/conversations/{conversation_id}",
-        headers=attacker_headers,
-    ).status_code == 404
-    assert client.get(
-        f"/api/v1/conversations/{conversation_id}/messages",
-        headers=attacker_headers,
-    ).status_code == 404
-    assert client.patch(
-        f"/api/v1/conversations/{conversation_id}",
-        headers=attacker_headers,
-        json={"title": "stolen"},
-    ).status_code == 404
-    assert client.delete(
-        f"/api/v1/conversations/{conversation_id}",
-        headers=attacker_headers,
-    ).status_code == 404
+    assert (
+        client.get(
+            f"/api/v1/conversations/{conversation_id}",
+            headers=attacker_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            f"/api/v1/conversations/{conversation_id}/messages",
+            headers=attacker_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.patch(
+            f"/api/v1/conversations/{conversation_id}",
+            headers=attacker_headers,
+            json={"title": "stolen"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.delete(
+            f"/api/v1/conversations/{conversation_id}",
+            headers=attacker_headers,
+        ).status_code
+        == 404
+    )
 
 
 def test_rag_idor_denied_and_search_is_user_scoped():
@@ -74,14 +89,20 @@ def test_rag_idor_denied_and_search_is_user_scoped():
     assert created.status_code == 201
     document_id = created.json()["id"]
 
-    assert client.delete(
-        f"/api/v1/rag/documents/{document_id}",
-        headers=attacker_headers,
-    ).status_code == 404
-    assert client.post(
-        f"/api/v1/rag/documents/{document_id}/reindex",
-        headers=attacker_headers,
-    ).status_code == 404
+    assert (
+        client.delete(
+            f"/api/v1/rag/documents/{document_id}",
+            headers=attacker_headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/v1/rag/documents/{document_id}/reindex",
+            headers=attacker_headers,
+        ).status_code
+        == 404
+    )
     search = client.post(
         "/api/v1/rag/search",
         headers=attacker_headers,
@@ -101,6 +122,7 @@ def test_tool_permission_plan_and_confirmation_enforced():
     assert write_tool.requires_confirmation
 
     import asyncio
+
     try:
         asyncio.run(
             execute_tool(
@@ -118,7 +140,12 @@ def test_tool_permission_plan_and_confirmation_enforced():
 
 def test_terminal_tools_require_confirmation_for_arbitrary_commands():
     registry = get_registry()
-    for name in ("terminal_run_tests", "terminal_run_lint", "terminal_run_build", "terminal_install_package"):
+    for name in (
+        "terminal_run_tests",
+        "terminal_run_lint",
+        "terminal_run_build",
+        "terminal_install_package",
+    ):
         assert registry.get(name).requires_confirmation is True
 
 
@@ -191,13 +218,16 @@ def test_refund_is_admin_only_and_non_settled_is_rejected():
     _set_role("security-refund-user@example.com", "admin")
     admin_login = client.post(
         "/api/v1/auth/login",
-        json={"email": "security-refund-user@example.com", "password": "securepass123"},
+        json={"email": "security-refund-user@example.com", "password": "Str0ng!Passw0rd"},
     )
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
-    assert client.post(
-        f"/api/v1/payments/{payment_id}/refund",
-        headers=admin_headers,
-    ).status_code == 409
+    assert (
+        client.post(
+            f"/api/v1/payments/{payment_id}/refund",
+            headers=admin_headers,
+        ).status_code
+        == 409
+    )
 
 
 def test_expired_or_invalid_bearer_token_is_rejected():

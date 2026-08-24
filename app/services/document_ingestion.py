@@ -10,7 +10,12 @@ class DocumentExtractionError(RuntimeError):
     pass
 
 
-SUPPORTED_EXTENSIONS = {".txt": "text/plain", ".md": "text/markdown", ".markdown": "text/markdown", ".pdf": "application/pdf"}
+SUPPORTED_EXTENSIONS = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".pdf": "application/pdf",
+}
 
 
 def extract_text(filename: str, content: bytes) -> tuple[str, str, str]:

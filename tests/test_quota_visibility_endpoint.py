@@ -1,5 +1,8 @@
+from datetime import UTC
+
+
 def test_quota_visibility_user_fields_are_exposed(db):
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from app.models.conversation import Conversation
     from app.models.user import User
@@ -12,5 +15,5 @@ def test_quota_visibility_user_fields_are_exposed(db):
     db.add(conversation)
     db.commit()
 
-    day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     assert requests_used_since(db, user.id, day_start) == 0

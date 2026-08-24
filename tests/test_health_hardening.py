@@ -4,9 +4,9 @@ from app.models.billing import Payment, Subscription
 from app.models.document import Document
 from app.models.user import User
 from app.services.billing_service import apply_payment_notification, sync_user_role
+from app.services.payments import PaymentOutcome
 from app.services.rag_jobs import process_document_index
 from app.services.rag_service import RAGError, create_pending_document
-from tests.conftest import TestingSessionLocal
 
 
 def test_create_pending_document_enforces_text_size_and_name(db, monkeypatch):
@@ -81,6 +81,7 @@ def test_settled_payment_cannot_be_regressed_by_late_failure(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="tx-settled",
         transaction_status="settlement",
+        outcome=PaymentOutcome.PAID,
     )
     apply_payment_notification(
         db,
@@ -88,6 +89,7 @@ def test_settled_payment_cannot_be_regressed_by_late_failure(db):
         provider_order_id=payment.provider_order_id,
         provider_transaction_id="tx-late",
         transaction_status="expire",
+        outcome=PaymentOutcome.FAILED,
     )
     db.refresh(payment)
     db.refresh(user)

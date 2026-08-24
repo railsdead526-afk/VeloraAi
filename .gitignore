@@ -2,6 +2,14 @@
 *.db.bak
 *.sqlite
 *.sqlite3
+
+# Local editor and manual backup artefacts. These are easy to commit by
+# accident, and a database backup in Git is a credential leak.
+*.bak
+*.orig
+*.rej
+*.backup-*
+*.db.backup-*
 __pycache__/
 .venv/
 venv/
@@ -27,3 +35,7 @@ web/.env.*.local
 
 # Local-only Termux dependency workaround
 requirements-termux.txt
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/

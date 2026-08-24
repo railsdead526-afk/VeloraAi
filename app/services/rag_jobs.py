@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,6 @@ from app.core.database import SessionLocal
 from app.models.document import Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
 from app.services.rag_service import RAGError, chunk_text, content_hash, embed_texts, normalize_text
-
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +64,10 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
             commit=False,
         )
 
-        db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete(synchronize_session=False)
-        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
+        db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete(
+            synchronize_session=False
+        )
+        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
             db.add(
                 DocumentChunk(
                     document_id=document.id,
@@ -78,7 +79,7 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
         document.content_hash = content_hash(normalized)
         document.status = "ready"
         document.last_index_error = None
-        document.last_indexed_at = datetime.now(timezone.utc)
+        document.last_indexed_at = datetime.now(UTC)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -107,7 +108,10 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
         failed = db.query(Document).filter(Document.id == document_id).first()
         if failed is not None:
             failed.status = "failed"
-            failed.last_index_error = type(exc).__name__
+            # RAGError messages are written for the user and carry no provider
+            # internals; anything else is reported by type only.
+            detail = str(exc) if isinstance(exc, RAGError) and str(exc) else type(exc).__name__
+            failed.last_index_error = detail[:255]
             try:
                 db.commit()
             except Exception:

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from app.core.config import settings
-
 
 SYSTEM_PROMPT = (
     "Kamu adalah asisten AI VeloraAi. Jawab dengan jelas, akurat, dan ringkas "
@@ -26,9 +24,13 @@ SUPPORTED_PROVIDERS = frozenset({"mock", "openai", "llama"})
 def get_provider_config() -> AIProviderConfig:
     provider = settings.ai_provider
     if provider == "openai":
-        return AIProviderConfig("openai", settings.openai_api_key, settings.openai_base_url, settings.openai_model)
+        return AIProviderConfig(
+            "openai", settings.openai_api_key, settings.openai_base_url, settings.openai_model
+        )
     if provider == "llama":
-        return AIProviderConfig("llama", settings.llama_api_key, settings.llama_base_url, settings.llama_model)
+        return AIProviderConfig(
+            "llama", settings.llama_api_key, settings.llama_base_url, settings.llama_model
+        )
     if provider == "mock":
         return AIProviderConfig("mock", "", "", "mock")
     raise RuntimeError("AI provider is not configured")
@@ -49,7 +51,7 @@ def build_api_messages(messages: list[dict]) -> list[dict]:
     return api_messages
 
 
-def parse_usage(data: dict) -> tuple[Optional[int], Optional[int]]:
+def parse_usage(data: dict) -> tuple[int | None, int | None]:
     usage = data.get("usage") or {}
     input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
     output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))

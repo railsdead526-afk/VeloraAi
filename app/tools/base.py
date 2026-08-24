@@ -1,7 +1,7 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Awaitable, Callable
-
+from typing import Any
 
 ToolHandler = Callable[[dict[str, Any]], Any | Awaitable[Any]]
 

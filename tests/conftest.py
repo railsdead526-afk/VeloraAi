@@ -2,18 +2,43 @@ import os
 import sys
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from fastapi.testclient import TestClient
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from app.main import app
+# Pin the test environment BEFORE app.core.config is imported, because it calls
+# load_dotenv() at module scope. Without this, a developer's local .env leaks
+# into the suite and tests pass or fail depending on a file that is not in the
+# repository -- which is exactly what happened: a local PAYMENT_PROVIDER=disabled
+# turned four payment tests red on one machine and green in CI.
+#
+# setdefault, not assignment: an explicit variable on the command line still wins.
+_TEST_ENV = {
+    "APP_ENV": "test",
+    "APP_DEBUG": "false",
+    "DATABASE_URL": "sqlite:///./test.db",
+    "DATABASE_SCHEMA": "public",
+    "SECRET_KEY": "ci-test-secret-key-012345678901234567890123",
+    "AI_PROVIDER": "mock",
+    "PAYMENT_PROVIDER": "midtrans",
+    "RATE_LIMIT_STORAGE_URI": "memory://",
+    "CORS_ORIGINS": "http://localhost:3000",
+    "EMBEDDING_MODEL": "text-embedding-3-small",
+    "EMBEDDING_DIMENSIONS": "1536",
+    "REQUIRE_EMAIL_VERIFICATION": "false",
+    "SMTP_HOST": "",
+    "METRICS_TOKEN": "",
+}
+for _key, _value in _TEST_ENV.items():
+    os.environ.setdefault(_key, _value)
+
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.rate_limit import limiter
+from app.main import app
 from app.models.user import User
-from app.api.v1 import agent_stream, conversations
 
 TEST_DATABASE_URL = "sqlite:///./test.db"
 
@@ -31,16 +56,6 @@ def enable_sqlite_foreign_keys(dbapi_connection, connection_record):
 
 
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-# The canonical /messages/stream route now lives in agent_stream.py. Keep the
-# legacy integration tests' monkeypatch target effective while they are
-# migrated to patch agent_stream directly. This is test-only compatibility.
-def _legacy_stream_patch_bridge(*args, **kwargs):
-    return conversations.stream_ai_reply_from_history(*args, **kwargs)
-
-
-agent_stream.stream_ai_reply_from_history = _legacy_stream_patch_bridge
 
 
 @pytest.fixture(autouse=True)

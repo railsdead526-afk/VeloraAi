@@ -76,7 +76,9 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_model", "test-model")
-    monkeypatch.setattr("app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools))
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools)
+    )
 
     registry = ToolRegistry()
     calls = []
@@ -96,11 +98,26 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
     )
 
     first_round = [
-        _sse({"choices": [{"delta": {"tool_calls": [{
-            "index": 0,
-            "id": "call-1",
-            "function": {"name": "github_list_repositories", "arguments": "{}"},
-        }]}}]}),
+        _sse(
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call-1",
+                                    "function": {
+                                        "name": "github_list_repositories",
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        ),
         "data: [DONE]",
     ]
     second_round = [
@@ -110,7 +127,9 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
     ]
 
     client = _FakeClient([first_round, second_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client)
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client
+    )
     events = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -131,7 +150,9 @@ async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatc
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_model", "test-model")
-    monkeypatch.setattr("app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools))
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools)
+    )
 
     registry = ToolRegistry()
     executed = []
@@ -152,16 +173,29 @@ async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatc
     )
 
     tool_request = {
-        "choices": [{"delta": {"tool_calls": [{
-            "index": 0,
-            "id": "call-2",
-            "function": {"name": "dangerous_write", "arguments": '{"value":"approved"}'},
-        }]}}]
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-2",
+                            "function": {
+                                "name": "dangerous_write",
+                                "arguments": '{"value":"approved"}',
+                            },
+                        }
+                    ]
+                }
+            }
+        ]
     }
     first_round = [_sse(tool_request), "data: [DONE]"]
 
     client = _FakeClient([first_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client)
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: client
+    )
     events = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -186,7 +220,9 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_model", "test-model")
-    monkeypatch.setattr("app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools))
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.select_tools", lambda tools, *_args, **_kwargs: list(tools)
+    )
 
     registry = ToolRegistry()
     executed = []
@@ -207,11 +243,22 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     )
 
     tool_request = {
-        "choices": [{"delta": {"tool_calls": [{
-            "index": 0,
-            "id": "call-3",
-            "function": {"name": "dangerous_write", "arguments": '{"value":"approved"}'},
-        }]}}]
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-3",
+                            "function": {
+                                "name": "dangerous_write",
+                                "arguments": '{"value":"approved"}',
+                            },
+                        }
+                    ]
+                }
+            }
+        ]
     }
     first_round = [_sse(tool_request), "data: [DONE]"]
     final_round = [
@@ -221,7 +268,9 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     ]
 
     first_client = _FakeClient([first_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: first_client)
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: first_client
+    )
     events = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -233,10 +282,14 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             conversation_id=7,
         )
     ]
-    token = next(event.confirmation_token for event in events if event.type == "tool_confirmation_required")
+    token = next(
+        event.confirmation_token for event in events if event.type == "tool_confirmation_required"
+    )
 
     resumed_client = _FakeClient([first_round, final_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: resumed_client)
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: resumed_client
+    )
     resumed = [
         event
         async for event in stream_ai_reply_with_tools(
@@ -254,7 +307,9 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
     assert resumed[-1].type == "done"
 
     mismatched_client = _FakeClient([first_round])
-    monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: mismatched_client)
+    monkeypatch.setattr(
+        "app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: mismatched_client
+    )
     mismatched = [
         event
         async for event in stream_ai_reply_with_tools(

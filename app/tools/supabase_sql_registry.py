@@ -1,6 +1,5 @@
-from app.tools.base import ToolDefinition
+from app.tools.base import ToolDefinition, ToolRisk
 from app.tools.supabase_tools import supabase_execute_sql, supabase_query_sql
-
 
 READ_SQL_PLANS = frozenset({"pro", "max", "admin"})
 WRITE_SQL_PLANS = frozenset({"max", "admin"})
@@ -24,6 +23,8 @@ def harden_supabase_sql_registry(registry) -> None:
             allowed_plans=WRITE_SQL_PLANS,
             parameters=SQL_PARAMETERS,
             requires_confirmation=True,
+            # Arbitrary SQL with write capability: the most dangerous tool here.
+            risk_level=ToolRisk.DESTRUCTIVE,
             timeout_seconds=30,
             max_calls_per_request=2,
         )
@@ -36,6 +37,9 @@ def harden_supabase_sql_registry(registry) -> None:
             allowed_plans=READ_SQL_PLANS,
             parameters=SQL_PARAMETERS,
             requires_confirmation=True,
+            # Read-only by policy, but still arbitrary SQL against the user's
+            # database, so it is gated rather than treated as a plain read.
+            risk_level=ToolRisk.WRITE,
             timeout_seconds=30,
             max_calls_per_request=3,
         )

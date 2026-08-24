@@ -5,7 +5,6 @@ import pytest
 
 from app.services.midtrans_service import MidtransError, MidtransService
 
-
 SANDBOX_SERVER_KEY = os.getenv("MIDTRANS_SERVER_KEY", "")
 RUN_SANDBOX_E2E = os.getenv("RUN_MIDTRANS_SANDBOX_E2E", "false").lower() == "true"
 SETTLED_ORDER_ID = os.getenv("MIDTRANS_E2E_SETTLED_ORDER_ID", "").strip()

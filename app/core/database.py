@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import declarative_base, sessionmaker
+
 from app.core.config import settings
 
 
@@ -10,7 +11,10 @@ def _database_url_with_schema() -> str:
 
     url = make_url(settings.database_url)
     query = dict(url.query)
-    query["options"] = f"-csearch_path={settings.database_schema},public"
+    # `extensions` is appended for Supabase, which installs pgvector there
+    # rather than in `public`. Postgres silently ignores schemas in a
+    # search_path that do not exist, so this is inert everywhere else.
+    query["options"] = f"-csearch_path={settings.database_schema},public,extensions"
     return url.set(query=query).render_as_string(hide_password=False)
 
 

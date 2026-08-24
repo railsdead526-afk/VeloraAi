@@ -1,18 +1,28 @@
 'use client'
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
+
+import AccountPanel from './AccountPanel'
+import DocumentsPanel from './DocumentsPanel'
+import IntegrationsPanel from './IntegrationsPanel'
+import { AgentEventParser, type AgentEvent } from '../../lib/stream'
 import {
+  MIN_PASSWORD_LENGTH,
   clearAuthToken,
   createConversation,
+  describePasswordPolicy,
+  ensureFreshToken,
   getAuthToken,
   getCurrentUser,
   getMessages,
   getStreamUrl,
   listConversations,
   login,
+  logout as apiLogout,
   register,
-  setAuthToken,
+  requestPasswordReset,
   subscribeAuthExpired,
+  validatePassword,
   type Conversation,
   type Message,
   type User,
@@ -47,10 +57,21 @@ export default function Chat() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
   const [error, setError] = useState('')
   const [useRag, setUseRag] = useState(true)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [toolActivity, setToolActivity] = useState('')
+  const [showIntegrations, setShowIntegrations] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const [showDocuments, setShowDocuments] = useState(false)
+  // Subscription emails deep-link here as /?panel=billing. Read during the
+  // initialiser so the correct tab is open on first paint.
+  const [accountTab, setAccountTab] = useState<'account' | 'billing' | 'privacy'>(() => {
+    if (typeof window === 'undefined') return 'account'
+    const panel = new URLSearchParams(window.location.search).get('panel')
+    return panel === 'billing' || panel === 'privacy' ? panel : 'account'
+  })
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -62,6 +83,9 @@ export default function Chat() {
       }
       try {
         setUser(await getCurrentUser())
+        if (new URLSearchParams(window.location.search).has('panel')) {
+          setShowAccount(true)
+        }
         const conversations = await listConversations()
         setChats(conversations)
         if (conversations[0]) setActiveChat(conversations[0].id)
@@ -116,50 +140,62 @@ export default function Chat() {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    const parser = new AgentEventParser()
     const assistantPlaceholderId = -(Date.now() + 1)
     let assistantId = assistantPlaceholderId
     let assistantContent = ''
     let assistantStarted = false
-    let buffer = ''
     let confirmationRequired = false
     let confirmationToolName = ''
     let confirmationToolCallId = ''
     let confirmationToken = ''
+    let streamError: Error | null = null
 
     setMessages((current) => [...current.filter((message) => message.id !== userMessage.id), userMessage])
 
-    const processLine = (line: string) => {
-      if (!line.startsWith('data: ')) return
-      const payload = JSON.parse(line.slice(6)) as {
-        type?: 'token' | 'tool_start' | 'tool_confirmation_required' | 'tool_end' | 'done' | 'error'
-        content?: string
-        detail?: string
-        message_id?: number
-        name?: string
-        tool_call_id?: string
-        confirmation_token?: string
+    // Committing every token straight to React state re-renders the whole
+    // transcript per token. A long reply on a mid-range phone spends more time
+    // rendering than the model spends generating, so tokens are batched and
+    // flushed at most once per animation frame.
+    let pendingFrame: number | null = null
+    const cancelFrame = () => {
+      if (pendingFrame !== null) {
+        cancelAnimationFrame(pendingFrame)
+        pendingFrame = null
       }
+    }
+    const commitContent = () => {
+      const content = assistantContent
+      setMessages((current) =>
+        current.map((message) => (message.id === assistantId ? { ...message, content } : message)),
+      )
+    }
+    const scheduleCommit = () => {
+      if (pendingFrame !== null) return
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null
+        commitContent()
+      })
+    }
 
+    const processEvent = (payload: AgentEvent) => {
       if (payload.type === 'token' && payload.content) {
         assistantContent += payload.content
         if (!assistantStarted) {
           assistantStarted = true
+          const content = assistantContent
           setMessages((current) => [
             ...current,
             {
               id: assistantPlaceholderId,
               conversation_id: userMessage.conversation_id,
               role: 'assistant',
-              content: assistantContent,
+              content,
               created_at: new Date().toISOString(),
             },
           ])
         } else {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantId ? { ...message, content: assistantContent } : message,
-            ),
-          )
+          scheduleCommit()
         }
       }
 
@@ -178,29 +214,42 @@ export default function Chat() {
       if (payload.type === 'tool_end') setToolActivity('')
 
       if (payload.type === 'done' && payload.message_id) {
-        assistantId = payload.message_id
+        const resolvedId = payload.message_id
         setMessages((current) =>
           current.map((message) =>
-            message.id === assistantPlaceholderId ? { ...message, id: assistantId } : message,
+            message.id === assistantPlaceholderId ? { ...message, id: resolvedId } : message,
           ),
         )
+        assistantId = resolvedId
       }
 
-      if (payload.type === 'error') throw new Error(payload.detail || 'AI request failed')
-    }
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        const normalized = line.trim()
-        if (normalized) processLine(normalized)
+      // Recorded rather than thrown so the reader is still drained and released.
+      if (payload.type === 'error') {
+        streamError = new Error(payload.detail || 'AI request failed')
       }
     }
-    if (buffer.trim()) processLine(buffer.trim())
+
+    try {
+      while (!streamError) {
+        const { done, value } = await reader.read()
+        if (done) break
+        for (const event of parser.push(decoder.decode(value, { stream: true }))) {
+          processEvent(event)
+        }
+      }
+      if (!streamError) {
+        for (const event of parser.flush()) processEvent(event)
+      }
+    } finally {
+      cancelFrame()
+      // Land whatever the last frame did not get to before returning.
+      if (assistantStarted) commitContent()
+      // Without this an aborted or failed stream leaves the body unread and the
+      // connection open until garbage collection.
+      await reader.cancel().catch(() => undefined)
+    }
+
+    if (streamError) throw streamError
 
     return {
       confirmationRequired,
@@ -228,11 +277,15 @@ export default function Chat() {
     const controller = new AbortController()
     abortRef.current = controller
 
+    // Access tokens live 15 minutes, so refresh before opening a stream that
+    // may run for a while. apiFetch cannot retry a half-consumed SSE body.
+    const streamToken = (await ensureFreshToken()) ?? getAuthToken()
+
     const response = await fetch(getStreamUrl(conversationId), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAuthToken()}`,
+        Authorization: `Bearer ${streamToken}`,
       },
       body: JSON.stringify({
         content,
@@ -295,6 +348,9 @@ export default function Chat() {
     } catch (sendError) {
       console.error(sendError)
       setError(sendError instanceof Error ? sendError.message : 'Failed to send message')
+      // Hand the text back rather than making the user retype it, but never
+      // clobber something they have already started typing since.
+      setInput((current) => (current.trim() ? current : content))
     } finally {
       abortRef.current = null
       setToolActivity('')
@@ -345,18 +401,37 @@ export default function Chat() {
     }
   }
 
+  const handleForgotPassword = async () => {
+    setAuthError('')
+    setAuthNotice('')
+    if (!email.trim()) {
+      setAuthError('Enter your email address first.')
+      return
+    }
+    try {
+      await requestPasswordReset(email.trim())
+    } catch {
+      // The endpoint always accepts, so a failure here is a network problem.
+    }
+    // Deliberately unconditional: confirming whether an address exists would
+    // turn this into an account-enumeration oracle.
+    setAuthNotice('If that address has an account, a reset link is on its way.')
+  }
+
   const handleAuth = async (event: FormEvent) => {
     event.preventDefault()
     setAuthError('')
+    setAuthNotice('')
     setError('')
     setAuthLoading(true)
     try {
-      if (authMode === 'login') {
-        setAuthToken((await login(email.trim(), password)).access_token)
-      } else {
+      if (authMode === 'register') {
+        const policyError = validatePassword(password)
+        if (policyError) throw new Error(policyError)
         await register(email.trim(), password)
-        setAuthToken((await login(email.trim(), password)).access_token)
       }
+      // login() stores the access and refresh tokens.
+      await login(email.trim(), password)
       setUser(await getCurrentUser())
       const conversations = await listConversations()
       setChats(conversations)
@@ -368,9 +443,10 @@ export default function Chat() {
     }
   }
 
-  const logout = () => {
+  const handleLogout = async () => {
     abortRef.current?.abort()
-    clearAuthToken()
+    // Revokes the access token's jti and the refresh session server side.
+    await apiLogout()
     setUser(null)
     setChats([])
     setMessages([])
@@ -403,10 +479,17 @@ export default function Chat() {
           <h1 style={styles.title}>{authMode === 'login' ? 'Welcome back' : 'Create your workspace'}</h1>
           <p style={styles.muted}>{authMode === 'login' ? 'Sign in to continue.' : 'Create an account to start using VeloraAi.'}</p>
           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" type="email" autoComplete="email" style={styles.input} required />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={8} />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={authMode === 'register' ? MIN_PASSWORD_LENGTH : 1} />
+          {authMode === 'register' && <p style={styles.muted}>{describePasswordPolicy()}</p>}
           {authError && <div style={styles.error}>{authError}</div>}
+          {authNotice && <div style={styles.notice}>{authNotice}</div>}
           <button type="submit" style={styles.primary}>{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
-          <button type="button" onClick={() => setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))} style={styles.link}>
+          {authMode === 'login' && (
+            <button type="button" onClick={() => void handleForgotPassword()} style={styles.link}>
+              Forgot your password?
+            </button>
+          )}
+          <button type="button" onClick={() => { setAuthMode((mode) => (mode === 'login' ? 'register' : 'login')); setAuthError(''); setAuthNotice('') }} style={styles.link}>
             {authMode === 'login' ? 'Create an account' : 'Back to sign in'}
           </button>
         </form>
@@ -416,6 +499,19 @@ export default function Chat() {
 
   return (
     <main style={styles.app}>
+      {showIntegrations && <IntegrationsPanel onClose={() => setShowIntegrations(false)} />}
+      {showDocuments && <DocumentsPanel onClose={() => setShowDocuments(false)} />}
+      {showAccount && user && (
+        <AccountPanel
+          user={user}
+          initialTab={accountTab}
+          onClose={() => setShowAccount(false)}
+          onSignedOut={() => {
+            setShowAccount(false)
+            void handleLogout()
+          }}
+        />
+      )}
       <aside style={styles.sidebar}>
         <div>
           <div style={styles.logo}>VELORAAI</div>
@@ -429,7 +525,10 @@ export default function Chat() {
             </button>
           ))}
         </div>
-        <button onClick={logout} style={styles.link}>Sign out</button>
+        <button onClick={() => setShowDocuments(true)} style={styles.link}>Documents</button>
+        <button onClick={() => { setAccountTab('account'); setShowAccount(true) }} style={styles.link}>Account</button>
+        <button onClick={() => setShowIntegrations(true)} style={styles.link}>Integrations</button>
+        <button onClick={() => void handleLogout()} style={styles.link}>Sign out</button>
       </aside>
 
       <section style={styles.main}>
@@ -503,6 +602,7 @@ const styles: Record<string, React.CSSProperties> = {
   confirmation: { maxWidth: 620, margin: '8px auto 16px', border: '1px solid #5a4724', background: '#17130b', borderRadius: 14, padding: 16 },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
   error: { color: '#ffb4a9', background: '#281613', border: '1px solid #4a241e', borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 12 },
+  notice: { color: '#a9ffc0', background: '#132818', border: '1px solid #1e4a2c', borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 12 },
   center: { minHeight: '100vh', background: '#080808', color: '#fff', display: 'grid', placeItems: 'center', padding: 20 },
   card: { width: 'min(420px, 100%)', padding: 28, border: '1px solid #252525', borderRadius: 20, background: '#111', display: 'flex', flexDirection: 'column', gap: 12 },
   title: { margin: '6px 0 0', fontSize: 28 },

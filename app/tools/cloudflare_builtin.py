@@ -1,4 +1,4 @@
-from app.tools.base import ToolDefinition
+from app.tools.base import ToolDefinition, ToolRisk
 from app.tools.cloudflare_tools import (
     cloudflare_create_dns_record,
     cloudflare_delete_dns_record,
@@ -49,6 +49,7 @@ def register_cloudflare_tools(registry) -> None:
                 "additionalProperties": False,
             },
             requires_confirmation=True,
+            risk_level=ToolRisk.WRITE,
             timeout_seconds=15,
             max_calls_per_request=3,
         ),
@@ -72,6 +73,7 @@ def register_cloudflare_tools(registry) -> None:
                 "additionalProperties": False,
             },
             requires_confirmation=True,
+            risk_level=ToolRisk.WRITE,
             timeout_seconds=15,
             max_calls_per_request=3,
         ),
@@ -90,6 +92,7 @@ def register_cloudflare_tools(registry) -> None:
                 "additionalProperties": False,
             },
             requires_confirmation=True,
+            risk_level=ToolRisk.DESTRUCTIVE,
             timeout_seconds=15,
             max_calls_per_request=3,
         ),

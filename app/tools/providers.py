@@ -1,11 +1,20 @@
-import os
 from typing import Any
 
 import httpx
 
+from app.tools.credentials import resolve_credential
+from app.tools.errors import ToolProviderError
+from app.tools.identifiers import encode_repository_path, validate_repository
 
-class ToolProviderError(Exception):
-    """Raised when an external tool provider cannot be reached safely."""
+__all__ = [
+    "ToolProviderError",
+    "cloudflare_list_zones",
+    "github_list_repositories",
+    "github_read_file",
+    "railway_list_projects",
+    "supabase_list_projects",
+    "vercel_list_projects",
+]
 
 
 def _request(
@@ -30,20 +39,16 @@ def _request(
 
 
 def github_list_repositories(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("GITHUB_TOKEN", "")
-    if not token:
-        raise ToolProviderError("GITHUB_TOKEN is not configured")
+    token = resolve_credential("github")
     per_page = min(max(int(arguments.get("per_page", 20)), 1), 100)
     data = _request("GET", f"https://api.github.com/user/repos?per_page={per_page}", token=token)
     return {"repositories": data.get("data", data)}
 
 
 def github_read_file(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("GITHUB_TOKEN", "")
-    repo = str(arguments.get("repository", "")).strip()
-    path = str(arguments.get("path", "")).strip().lstrip("/")
-    if not token or not repo or not path or repo.count("/") != 1:
-        raise ToolProviderError("Invalid GitHub tool arguments or missing GITHUB_TOKEN")
+    token = resolve_credential("github")
+    repo = validate_repository(str(arguments.get("repository", "")))
+    path = encode_repository_path(str(arguments.get("path", "")))
     data = _request("GET", f"https://api.github.com/repos/{repo}/contents/{path}", token=token)
     return {
         "name": data.get("name"),
@@ -55,25 +60,21 @@ def github_read_file(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def vercel_list_projects(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("VERCEL_TOKEN", "")
-    if not token:
-        raise ToolProviderError("VERCEL_TOKEN is not configured")
+    token = resolve_credential("vercel")
     limit = min(max(int(arguments.get("limit", 20)), 1), 100)
     return _request("GET", f"https://api.vercel.com/v9/projects?limit={limit}", token=token)
 
 
 def railway_list_projects(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("RAILWAY_TOKEN", "")
-    if not token:
-        raise ToolProviderError("RAILWAY_TOKEN is not configured")
+    token = resolve_credential("railway")
     query = "query { projects { nodes { id name description } } }"
-    return _request("POST", "https://backboard.railway.com/graphql/v2", token=token, json={"query": query})
+    return _request(
+        "POST", "https://backboard.railway.com/graphql/v2", token=token, json={"query": query}
+    )
 
 
 def cloudflare_list_zones(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("CLOUDFLARE_API_TOKEN", "")
-    if not token:
-        raise ToolProviderError("CLOUDFLARE_API_TOKEN is not configured")
+    token = resolve_credential("cloudflare")
     return _request(
         "GET",
         "https://api.cloudflare.com/client/v4/zones?per_page=50",
@@ -83,9 +84,7 @@ def cloudflare_list_zones(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def supabase_list_projects(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = os.getenv("SUPABASE_ACCESS_TOKEN", "")
-    if not token:
-        raise ToolProviderError("SUPABASE_ACCESS_TOKEN is not configured")
+    token = resolve_credential("supabase")
     return _request(
         "GET",
         "https://api.supabase.com/v1/projects",

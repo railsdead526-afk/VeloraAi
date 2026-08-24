@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
-from typing import Iterable
+import time
+from collections.abc import Iterable
 
 import httpx
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, contains_eager
 
 from app.core.config import settings
-from app.models.document import Document, DocumentChunk, EMBEDDING_DIMENSIONS
+from app.models.document import EMBEDDING_DIMENSIONS, Document, DocumentChunk
 from app.services.embedding_usage_service import record_embedding_usage
+
+logger = logging.getLogger(__name__)
+
+EMBEDDING_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+EMBEDDING_MAX_BACKOFF_SECONDS = 4.0
 
 
 class RAGError(RuntimeError):
@@ -69,6 +76,66 @@ def _embedding_config() -> tuple[str, str, str]:
     return base_url.rstrip("/"), api_key, model
 
 
+def _is_retryable_embedding_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in EMBEDDING_RETRYABLE_STATUS_CODES
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.ReadTimeout,
+            httpx.WriteTimeout,
+            httpx.PoolTimeout,
+            httpx.RemoteProtocolError,
+        ),
+    )
+
+
+def _embed_batch(
+    client: httpx.Client,
+    batch: list[str],
+    *,
+    url: str,
+    headers: dict[str, str],
+    model: str,
+) -> tuple[list[list[float]], int]:
+    """Embed one batch, retrying transient provider failures.
+
+    Without the retry a single network blip anywhere in a long document left the
+    whole document permanently marked as failed.
+    """
+    attempts = settings.ai_max_retries + 1
+    for attempt in range(attempts):
+        try:
+            response = client.post(url, headers=headers, json={"model": model, "input": batch})
+            response.raise_for_status()
+            data = response.json()
+            embeddings = [
+                item["embedding"]
+                for item in sorted(data.get("data", []), key=lambda item: item.get("index", 0))
+            ]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            if attempt >= attempts - 1 or not _is_retryable_embedding_error(exc):
+                raise RAGError("Embedding provider request failed") from exc
+            logger.warning(
+                "Retrying embedding request",
+                extra={"attempt": attempt + 1, "batch_size": len(batch)},
+            )
+            time.sleep(min(2.0**attempt, EMBEDDING_MAX_BACKOFF_SECONDS))
+            continue
+
+        if len(embeddings) != len(batch):
+            raise RAGError("Embedding provider returned an incomplete response")
+        if any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
+            raise RAGError(f"Embedding dimensions must be {EMBEDDING_DIMENSIONS}")
+
+        usage = data.get("usage") or {}
+        tokens = int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0)
+        return embeddings, tokens
+
+    raise RAGError("Embedding provider request failed")
+
+
 def embed_texts(texts: Iterable[str], *, return_metadata: bool = False):
     items = [text for text in texts if text.strip()]
     if not items:
@@ -82,31 +149,30 @@ def embed_texts(texts: Iterable[str], *, return_metadata: bool = False):
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    try:
-        response = httpx.post(
-            f"{base_url}/embeddings",
-            headers=headers,
-            json={"model": model, "input": items},
-            timeout=settings.ai_timeout_seconds,
-        )
-        response.raise_for_status()
-        data = response.json()
-        embeddings = [
-            item["embedding"]
-            for item in sorted(data.get("data", []), key=lambda item: item.get("index", 0))
-        ]
-    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-        raise RAGError("Embedding provider request failed") from exc
-    if len(embeddings) != len(items):
-        raise RAGError("Embedding provider returned an incomplete response")
-    if any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
-        raise RAGError(f"Embedding dimensions must be {EMBEDDING_DIMENSIONS}")
 
-    usage = data.get("usage") or {}
+    batch_size = max(1, settings.embedding_batch_size)
+    embeddings: list[list[float]] = []
+    total_tokens = 0
+    # A 10 MB document produces roughly ten thousand chunks. Sending them as one
+    # array exceeds every provider's per-request array and token limits, so large
+    # documents could never be indexed at all.
+    with httpx.Client(timeout=settings.ai_timeout_seconds) as client:
+        for start in range(0, len(items), batch_size):
+            batch = items[start : start + batch_size]
+            batch_embeddings, batch_tokens = _embed_batch(
+                client,
+                batch,
+                url=f"{base_url}/embeddings",
+                headers=headers,
+                model=model,
+            )
+            embeddings.extend(batch_embeddings)
+            total_tokens += batch_tokens
+
     metadata = {
         "provider": settings.ai_provider,
         "model": model,
-        "input_tokens": int(usage.get("prompt_tokens", usage.get("input_tokens", 0)) or 0),
+        "input_tokens": total_tokens,
     }
     return (embeddings, metadata) if return_metadata else embeddings
 
@@ -176,40 +242,6 @@ def create_pending_document(
     return document
 
 
-def ingest_text(
-    db: Session,
-    *,
-    user_id: int,
-    name: str,
-    text: str,
-    source: str = "text",
-    mime_type: str | None = "text/plain",
-) -> Document:
-    document = create_pending_document(
-        db,
-        user_id=user_id,
-        name=name,
-        text=text,
-        source=source,
-        mime_type=mime_type,
-    )
-    try:
-        chunks = chunk_text(document.raw_text)
-        embeddings = embed_texts(chunks)
-        for index, (chunk_content, embedding) in enumerate(zip(chunks, embeddings)):
-            db.add(DocumentChunk(document_id=document.id, chunk_index=index, content=chunk_content, embedding=embedding))
-        document.status = "ready"
-        db.commit()
-        db.refresh(document)
-        return document
-    except Exception:
-        db.rollback()
-        document = _get_document(db, user_id=user_id, document_id=document.id)
-        document.status = "failed"
-        db.commit()
-        raise
-
-
 def reindex_document(db: Session, *, user_id: int, document_id: int) -> Document:
     document = _get_document(db, user_id=user_id, document_id=document_id)
     if document.status in {"queued", "processing"}:
@@ -226,19 +258,31 @@ def delete_document(db: Session, *, user_id: int, document_id: int) -> None:
     db.commit()
 
 
-def _vector_candidates(db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int) -> list[tuple[DocumentChunk, float]]:
+def _vector_candidates(
+    db: Session, *, user_id: int, query_embedding: list[float], candidate_limit: int
+) -> list[tuple[DocumentChunk, float]]:
     distance = DocumentChunk.embedding.cosine_distance(query_embedding)
     statement = (
         select(DocumentChunk, distance.label("distance"))
         .join(DocumentChunk.document)
-        .where(Document.user_id == user_id, Document.status == "ready", DocumentChunk.embedding.is_not(None))
+        # build_context reads chunk.document.name for every hit. Without this the
+        # join is discarded and each chunk triggers its own SELECT, on the hot
+        # path of every RAG-backed chat message.
+        .options(contains_eager(DocumentChunk.document))
+        .where(
+            Document.user_id == user_id,
+            Document.status == "ready",
+            DocumentChunk.embedding.is_not(None),
+        )
         .order_by(distance)
         .limit(candidate_limit)
     )
     return [(chunk, float(distance_value)) for chunk, distance_value in db.execute(statement).all()]
 
 
-def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limit: int) -> list[DocumentChunk]:
+def _keyword_candidates(
+    db: Session, *, user_id: int, query: str, candidate_limit: int
+) -> list[DocumentChunk]:
     terms = [term for term in re.findall(r"[\w.-]+", query.lower()) if len(term) >= 2][:8]
     if not terms:
         return []
@@ -246,12 +290,16 @@ def _keyword_candidates(db: Session, *, user_id: int, query: str, candidate_limi
     statement = (
         select(DocumentChunk)
         .join(DocumentChunk.document)
+        .options(contains_eager(DocumentChunk.document))
         .where(Document.user_id == user_id, Document.status == "ready", or_(*conditions))
         .limit(candidate_limit * 2)
     )
     rows = list(db.execute(statement).scalars())
     query_terms = set(terms)
-    rows.sort(key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()), reverse=True)
+    rows.sort(
+        key=lambda chunk: sum(1 for term in query_terms if term in chunk.content.lower()),
+        reverse=True,
+    )
     return rows[:candidate_limit]
 
 
@@ -301,8 +349,12 @@ def hybrid_retrieve_chunks(
             db.rollback()
         raise
 
-    vector_rows = _vector_candidates(db, user_id=user_id, query_embedding=vector, candidate_limit=candidate_limit)
-    keyword_rows = _keyword_candidates(db, user_id=user_id, query=query, candidate_limit=candidate_limit)
+    vector_rows = _vector_candidates(
+        db, user_id=user_id, query_embedding=vector, candidate_limit=candidate_limit
+    )
+    keyword_rows = _keyword_candidates(
+        db, user_id=user_id, query=query, candidate_limit=candidate_limit
+    )
 
     fused: dict[int, float] = {}
     chunks: dict[int, DocumentChunk] = {}
@@ -323,7 +375,9 @@ def hybrid_retrieve_chunks(
     return [(chunks[chunk_id], distances.get(chunk_id, 1.0)) for chunk_id, _score in ranked]
 
 
-def retrieve_chunks(db: Session, *, user_id: int, query: str, limit: int = 5) -> list[tuple[DocumentChunk, float]]:
+def retrieve_chunks(
+    db: Session, *, user_id: int, query: str, limit: int = 5
+) -> list[tuple[DocumentChunk, float]]:
     return hybrid_retrieve_chunks(db, user_id=user_id, query=query, limit=limit)
 
 

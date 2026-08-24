@@ -17,21 +17,27 @@ def test_confirmation_token_is_single_use(db, user):
         arguments=arguments,
     )
 
-    assert verify_confirmation_token(
-        token,
-        user_id=user.id,
-        conversation_id=conversation.id,
-        tool_name="github_write_file",
-        arguments=arguments,
-    ) is True
+    assert (
+        verify_confirmation_token(
+            token,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            tool_name="github_write_file",
+            arguments=arguments,
+        )
+        is True
+    )
 
-    assert verify_confirmation_token(
-        token,
-        user_id=user.id,
-        conversation_id=conversation.id,
-        tool_name="github_write_file",
-        arguments=arguments,
-    ) is False
+    assert (
+        verify_confirmation_token(
+            token,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            tool_name="github_write_file",
+            arguments=arguments,
+        )
+        is False
+    )
 
     confirmation = db.query(ToolConfirmation).filter_by(user_id=user.id).one()
     assert confirmation.used_at is not None
