@@ -90,3 +90,36 @@ def test_delete_document_is_user_scoped(db, users):
         delete_document(db, user_id=owner.id, document_id=document.id)
 
     assert db.query(Document).filter(Document.id == document.id).first() is None
+
+
+def test_index_failure_retries_then_becomes_terminal(db, users, monkeypatch):
+    owner, _ = users
+    document = Document(
+        user_id=owner.id,
+        name="retry.txt",
+        source="text",
+        mime_type="text/plain",
+        status="queued",
+        content_hash="retry-hash",
+        raw_text="retry document",
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    monkeypatch.setattr("app.services.rag_jobs.settings.rag_max_index_attempts", 2)
+    monkeypatch.setattr(
+        "app.services.rag_jobs.embed_texts",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
+    )
+
+    process_document_index(document.id, db=db)
+    db.refresh(document)
+    assert document.status == "queued"
+    assert document.indexing_attempts == 1
+    assert document.last_index_error == "retry_RuntimeError"
+
+    process_document_index(document.id, db=db)
+    db.refresh(document)
+    assert document.status == "failed"
+    assert document.indexing_attempts == 2
+    assert document.last_index_error == "RuntimeError"

@@ -34,6 +34,7 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
                     "status": "processing",
                     "indexing_attempts": Document.indexing_attempts + 1,
                     "last_index_error": None,
+                    "updated_at": datetime.now(timezone.utc),
                 },
                 synchronize_session=False,
             )
@@ -106,8 +107,13 @@ def process_document_index(document_id: int, db: Session | None = None) -> None:
 
         failed = db.query(Document).filter(Document.id == document_id).first()
         if failed is not None:
-            failed.status = "failed"
-            failed.last_index_error = type(exc).__name__
+            if failed.indexing_attempts < settings.rag_max_index_attempts:
+                failed.status = "queued"
+                failed.last_index_error = f"retry_{type(exc).__name__}"
+            else:
+                failed.status = "failed"
+                failed.last_index_error = type(exc).__name__
+            failed.updated_at = datetime.now(timezone.utc)
             try:
                 db.commit()
             except Exception:
