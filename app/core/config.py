@@ -37,6 +37,7 @@ class Settings:
     rag_worker_poll_seconds = float(os.getenv("RAG_WORKER_POLL_SECONDS", "5"))
     rag_worker_batch_size = int(os.getenv("RAG_WORKER_BATCH_SIZE", "4"))
     rag_processing_stale_seconds = int(os.getenv("RAG_PROCESSING_STALE_SECONDS", "900"))
+    rag_max_index_attempts = int(os.getenv("RAG_MAX_INDEX_ATTEMPTS", "3"))
 
     midtrans_server_key = os.getenv("MIDTRANS_SERVER_KEY", "")
     midtrans_client_key = os.getenv("MIDTRANS_CLIENT_KEY", "")
@@ -81,6 +82,8 @@ class Settings:
             raise RuntimeError("RAG_WORKER_BATCH_SIZE must be between 1 and 100")
         if self.rag_processing_stale_seconds < 60:
             raise RuntimeError("RAG_PROCESSING_STALE_SECONDS must be at least 60 seconds")
+        if self.rag_max_index_attempts < 1 or self.rag_max_index_attempts > 10:
+            raise RuntimeError("RAG_MAX_INDEX_ATTEMPTS must be between 1 and 10")
         if self.payment_timeout_seconds <= 0:
             raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.pro_price_idr < 0 or self.max_price_idr < 0:
