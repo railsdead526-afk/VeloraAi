@@ -13,10 +13,14 @@ def _production_settings() -> Settings:
     config.app_debug = False
     config.secret_key = "s" * 64
     config.database_url = "postgresql://user:pass@localhost/velora"
+    config.database_schema = "velora"
     config.rate_limit_storage_uri = "redis://localhost:6379/0"
     config.cors_origins = ["https://velora.example.com"]
     config.midtrans_server_key = "server-key"
     config.midtrans_client_key = "client-key"
+    config.midtrans_is_production = True
+    config.midtrans_base_url = "https://api.midtrans.com"
+    config.midtrans_snap_base_url = "https://app.midtrans.com"
     config.pro_price_idr = 99000
     config.max_price_idr = 199000
     return config
@@ -103,3 +107,23 @@ def test_openai_request_uses_configured_endpoint_and_model():
     assert url == "https://api.example.test/v1/chat/completions"
     assert headers["Authorization"] == "Bearer test-key"
     assert payload["model"] == "test-model"
+
+
+def test_production_requires_midtrans_production_mode_and_endpoints():
+    config = _production_settings()
+    config.ai_provider = "openai"
+    config.openai_api_key = "test-key"
+
+    config.midtrans_is_production = False
+    with pytest.raises(RuntimeError, match="MIDTRANS_IS_PRODUCTION"):
+        config.validate()
+
+    config.midtrans_is_production = True
+    config.midtrans_base_url = "https://api.sandbox.midtrans.com"
+    with pytest.raises(RuntimeError, match="MIDTRANS_BASE_URL"):
+        config.validate()
+
+    config.midtrans_base_url = "https://api.midtrans.com"
+    config.midtrans_snap_base_url = "https://app.sandbox.midtrans.com"
+    with pytest.raises(RuntimeError, match="MIDTRANS_SNAP_BASE_URL"):
+        config.validate()

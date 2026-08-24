@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from app.models.conversation import Conversation
 from app.services.ai_tool_stream import stream_ai_reply_with_tools
 from app.tools.base import ToolDefinition
 from app.tools.registry import ToolRegistry
@@ -126,7 +127,12 @@ async def test_native_stream_handles_multi_round_tool_call(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatch):
+async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatch, db, user):
+    conversation = Conversation(title="Tool stream", user_id=user.id)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
     monkeypatch.setattr("app.services.ai_tool_stream.settings.ai_provider", "llama")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
@@ -169,8 +175,9 @@ async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatc
             plan="pro",
             confirmed=False,
             registry=registry,
-            user_id=42,
-            conversation_id=7,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            db=db,
         )
     ]
 
@@ -181,7 +188,12 @@ async def test_native_stream_requires_confirmation_for_dangerous_tool(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatch):
+async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatch, db, user):
+    conversation = Conversation(title="Tool stream", user_id=user.id)
+    db.add(conversation)
+    db.commit()
+    db.refresh(conversation)
+
     monkeypatch.setattr("app.services.ai_tool_stream.settings.ai_provider", "llama")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_api_key", "test-key")
     monkeypatch.setattr("app.services.ai_tool_stream.settings.llama_base_url", "https://llama.test")
@@ -229,8 +241,9 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             plan="pro",
             confirmed=False,
             registry=registry,
-            user_id=42,
-            conversation_id=7,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            db=db,
         )
     ]
     token = next(event.confirmation_token for event in events if event.type == "tool_confirmation_required")
@@ -244,14 +257,20 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             plan="pro",
             confirmed=False,
             registry=registry,
-            user_id=42,
-            conversation_id=7,
+            user_id=user.id,
+            conversation_id=conversation.id,
+            db=db,
             approved_confirmation_token=token,
         )
     ]
 
     assert executed == [{"value": "approved"}]
     assert resumed[-1].type == "done"
+
+    mismatched_conversation = Conversation(title="Other conversation", user_id=user.id)
+    db.add(mismatched_conversation)
+    db.commit()
+    db.refresh(mismatched_conversation)
 
     mismatched_client = _FakeClient([first_round])
     monkeypatch.setattr("app.services.ai_tool_stream.httpx.AsyncClient", lambda *args, **kwargs: mismatched_client)
@@ -262,8 +281,9 @@ async def test_native_stream_accepts_only_matching_confirmation_token(monkeypatc
             plan="pro",
             confirmed=False,
             registry=registry,
-            user_id=42,
-            conversation_id=8,
+            user_id=user.id,
+            conversation_id=mismatched_conversation.id,
+            db=db,
             approved_confirmation_token=token,
         )
     ]

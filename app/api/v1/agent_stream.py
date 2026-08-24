@@ -86,6 +86,7 @@ def stream_native_message(
             if settings.ai_provider in {"openai", "llama"}:
                 async for event in stream_ai_reply_with_tools(
                     history_payload,
+                    db=db,
                     plan=plan,
                     confirmed=False,
                     registry=get_registry(),

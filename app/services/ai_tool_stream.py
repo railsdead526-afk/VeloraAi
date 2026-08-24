@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.ai_provider import auth_headers, build_api_messages, get_provider_config, parse_usage
@@ -81,6 +82,7 @@ async def _backoff(attempt: int) -> None:
 async def stream_ai_reply_with_tools(
     messages: list[dict],
     *,
+    db: Session | None = None,
     plan: str,
     confirmed: bool,
     registry: ToolRegistry,
@@ -247,8 +249,9 @@ async def stream_ai_reply_with_tools(
                             approved = True
                         elif confirmed:
                             approved = True
-                        elif user_id is not None and conversation_id is not None:
+                        elif db is not None and user_id is not None and conversation_id is not None:
                             approved = verify_confirmation_token(
+                                db,
                                 approved_confirmation_token,
                                 user_id=user_id,
                                 conversation_id=conversation_id,
@@ -259,8 +262,9 @@ async def stream_ai_reply_with_tools(
                         if not approved:
                             confirmation_required = True
                             confirmation_token = None
-                            if user_id is not None and conversation_id is not None:
+                            if db is not None and user_id is not None and conversation_id is not None:
                                 confirmation_token = create_confirmation_token(
+                                    db,
                                     user_id=user_id,
                                     conversation_id=conversation_id,
                                     tool_name=name,

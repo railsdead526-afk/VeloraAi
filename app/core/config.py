@@ -101,6 +101,12 @@ class Settings:
                 raise RuntimeError("CORS_ORIGINS must not use * when credentials are enabled")
             if not self.midtrans_server_key or not self.midtrans_client_key:
                 raise RuntimeError("Midtrans credentials must be configured in production")
+            if not self.midtrans_is_production:
+                raise RuntimeError("MIDTRANS_IS_PRODUCTION must be true in production")
+            if self.midtrans_base_url != "https://api.midtrans.com":
+                raise RuntimeError("MIDTRANS_BASE_URL must use the production Midtrans API endpoint")
+            if self.midtrans_snap_base_url != "https://app.midtrans.com":
+                raise RuntimeError("MIDTRANS_SNAP_BASE_URL must use the production Midtrans Snap endpoint")
             if self.pro_price_idr <= 0 or self.max_price_idr <= 0:
                 raise RuntimeError("Pro and Max prices must be configured in production")
 
