@@ -98,6 +98,7 @@ export default function AccountPanel({
   }
 
   const handleUpgrade = async (plan: 'pro' | 'max') => {
+    if (pricing?.enabled === false) return
     await run(async () => {
       const intent = await createPayment(plan)
       navigateExternal(intent.redirect_url)
@@ -225,9 +226,11 @@ export default function AccountPanel({
               Plans run for a fixed period and do not renew automatically. You keep access
               until the period you paid for ends.
             </p>
-            {pricing ? (
+            {pricing === null ? (
+              <p style={styles.muted}>Billing is not configured on this deployment.</p>
+            ) : pricing.enabled ? (
               <>
-                {!pricing.is_production && (
+                {pricing.is_production === false && (
                   <div style={styles.warn}>
                     <p style={styles.tight}>
                       Sandbox mode. No real payment will be taken.
@@ -245,7 +248,11 @@ export default function AccountPanel({
                     onClick={() => void handleUpgrade('pro')}
                     style={styles.primary}
                   >
-                    {user.role === 'pro' ? 'Current plan' : formatIdr(pricing.pro_price_idr)}
+                    {user.role === 'pro'
+                      ? 'Current plan'
+                      : pricing.pro_price_idr != null
+                        ? formatIdr(pricing.pro_price_idr)
+                        : 'Unavailable'}
                   </button>
                 </div>
                 <div style={styles.row}>
@@ -259,7 +266,11 @@ export default function AccountPanel({
                     onClick={() => void handleUpgrade('max')}
                     style={styles.primary}
                   >
-                    {user.role === 'max' ? 'Current plan' : formatIdr(pricing.max_price_idr)}
+                    {user.role === 'max'
+                      ? 'Current plan'
+                      : pricing.max_price_idr != null
+                        ? formatIdr(pricing.max_price_idr)
+                        : 'Unavailable'}
                   </button>
                 </div>
                 <p style={styles.fine}>
@@ -267,7 +278,29 @@ export default function AccountPanel({
                 </p>
               </>
             ) : (
-              <p style={styles.muted}>Billing is not configured on this deployment.</p>
+              <>
+                <div style={styles.warn}>
+                  <p style={styles.tight}>
+                    {pricing.reason ??
+                      'Upgrades are not available on this deployment yet.'}
+                  </p>
+                </div>
+                <div style={styles.row}>
+                  <div>
+                    <strong>Pro</strong>
+                    <div style={styles.fine}>Higher daily and monthly limits.</div>
+                  </div>
+                </div>
+                <div style={styles.row}>
+                  <div>
+                    <strong>Max</strong>
+                    <div style={styles.fine}>Highest limits.</div>
+                  </div>
+                </div>
+                <p style={styles.fine}>
+                  Your current plan and its limits keep working. Nothing is charged.
+                </p>
+              </>
             )}
           </section>
         )}

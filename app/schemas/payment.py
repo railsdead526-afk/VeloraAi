@@ -1,6 +1,23 @@
 from pydantic import BaseModel, Field
 
 
+class PaymentConfigResponse(BaseModel):
+    """Non-secret checkout settings for the UI.
+
+    The shape is shared by every provider so the client renders one honest
+    state per mode. When payments are disabled, pricing keys are ``None`` and
+    ``reason`` explains why, which is exactly what a deployment that is not
+    selling anything yet (the default) should show instead of a dead checkout.
+    """
+
+    provider: str
+    enabled: bool = True
+    is_production: bool | None = None
+    pro_price_idr: int | None = None
+    max_price_idr: int | None = None
+    reason: str | None = None
+
+
 class PaymentCreateRequest(BaseModel):
     plan: str = Field(pattern="^(pro|max)$")
 

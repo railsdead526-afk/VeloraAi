@@ -200,6 +200,31 @@ Scrape `GET /api/v1/metrics` with `Authorization: Bearer $METRICS_TOKEN`.
 | AI spend | daily token cost > budget | SEV3 |
 | Certificate expiry | < 14 days | SEV3 |
 
+The maintenance alert maps directly to the gauge the app exports
+(`velora_maintenance_age_seconds`, `-1` while no run has ever succeeded):
+
+```yaml
+# prometheus alerts — VeloraMaintenanceStalled
+groups:
+  - name: velora
+    rules:
+      - alert: VeloraMaintenanceStalled
+        expr: velora_maintenance_age_seconds == -1 or velora_maintenance_age_seconds > 10800
+        for: 10m
+        labels:
+          severity: sev2
+        annotations:
+          summary: Subscription sweep has not completed recently
+          description: >-
+            No successful maintenance run within the 3 h budget. Expired
+            subscriptions are not being downgraded and reminders are not being
+            sent. Check the cron/scheduler, then `scripts/run_maintenance.py`.
+```
+
+`-1` (never succeeded) is treated as stalled rather than ignored: a freshly
+deployed instance with no scheduler wired up should page someone, not stay
+silent.
+
 ## 9. Severity and escalation
 
 | Severity | Definition | Response | Comms |

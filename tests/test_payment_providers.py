@@ -177,9 +177,23 @@ def test_unrecognised_status_is_unknown_not_failed():
 
 
 def test_config_is_shaped_by_the_active_provider(fake_provider):
+    """The response model whitelists keys.
+
+    A provider cannot smuggle extra fields to the browser, so a future slip
+    like a credential landing in `client_config` is dropped instead of leaked.
+    The fake provider returns `{"provider": "fakepay", "currency": "IDR",
+    "hosted": True}`; only the schema-approved keys survive.
+    """
     headers = _headers("cfg-fake@example.com")
     body = client.get("/api/v1/payments/config", headers=headers).json()
-    assert body == {"provider": "fakepay", "currency": "IDR", "hosted": True}
+    assert body == {
+        "provider": "fakepay",
+        "enabled": True,
+        "is_production": None,
+        "pro_price_idr": None,
+        "max_price_idr": None,
+        "reason": None,
+    }
 
 
 def test_checkout_runs_through_the_active_provider(fake_provider):
@@ -345,6 +359,29 @@ def test_config_reports_disabled_instead_of_erroring(payments_off):
     body = client.get("/api/v1/payments/config", headers=headers).json()
     assert body["enabled"] is False
     assert "not enabled" in body["reason"]
+
+
+def test_config_disabled_shape_never_carries_prices(payments_off):
+    """A disabled deployment must not imply a purchasable plan to the client."""
+    headers = _headers("cfg-shape@example.com")
+    body = client.get("/api/v1/payments/config", headers=headers).json()
+    assert body["provider"] == "disabled"
+    assert body["pro_price_idr"] is None
+    assert body["max_price_idr"] is None
+    assert body["is_production"] is None
+
+
+def test_config_enabled_shape_carries_prices(monkeypatch):
+    monkeypatch.setattr(settings, "payment_provider", "midtrans")
+    monkeypatch.setattr(settings, "pro_price_idr", 19900)
+    monkeypatch.setattr(settings, "max_price_idr", 49900)
+    headers = _headers("cfg-on@example.com")
+    body = client.get("/api/v1/payments/config", headers=headers).json()
+    assert body["provider"] == "midtrans"
+    assert body["enabled"] is True
+    assert body["pro_price_idr"] == 19900
+    assert body["max_price_idr"] == 49900
+    assert body["reason"] is None
 
 
 def test_checkout_is_refused_when_payments_are_off(payments_off):

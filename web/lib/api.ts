@@ -466,9 +466,16 @@ export async function getEmbeddingUsage(): Promise<EmbeddingUsage> {
 
 export interface PaymentConfig {
   provider: string
-  is_production: boolean
-  pro_price_idr: number
-  max_price_idr: number
+  /**
+   * False on deployments that are not selling anything (the default). Pricing
+   * keys are then absent and `reason` explains why, so the UI can render an
+   * honest "unavailable" state instead of a dead checkout button.
+   */
+  enabled: boolean
+  is_production?: boolean
+  pro_price_idr?: number
+  max_price_idr?: number
+  reason?: string
 }
 
 export interface PaymentIntent {

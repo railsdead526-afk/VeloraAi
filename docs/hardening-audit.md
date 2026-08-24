@@ -220,6 +220,20 @@ Guards added so these classes cannot recur silently:
 Every fix in this table was reproduced before being changed, and each test was
 verified to fail against the previous implementation.
 
+## Payments-off foundation pass — August 2026
+
+Scope: the product is being deployed **without payments** while the Midtrans
+business review is pending, so "no payments" had to be a first-class mode, not
+a broken checkout.
+
+| Issue | Found by | Fix |
+| --- | --- | --- |
+| With `PAYMENT_PROVIDER=disabled`, `/payments/config` answered `{enabled: false, reason}` but the frontend type had no `enabled` field: the billing tab rendered `Rp NaN` price buttons and a misleading "Sandbox mode" banner, and clicking upgrade dead-ended in a 502 | Contract review while wiring the first component tests | `PaymentConfigResponse` response model whitelists one shape for every provider (enabled → pricing, disabled → reason, never both); `AccountPanel` renders an honest "upgrades unavailable" state with no price buttons; regression is locked by `AccountPanel.test.tsx` |
+| Provider `client_config()` dicts passed through to the browser unfiltered | Same change | The response model drops unknown keys, so a future slip (a credential landing in a provider's config dict) cannot leak to clients |
+| No component-level frontend tests; the `DocumentsPanel` polling bug class would recur silently | — | React Testing Library + jsdom wired into the existing vitest run (`// @vitest-environment jsdom` per file); tests cover billing-disabled states, price rendering, safe external navigation on checkout, polling lifecycle including re-arm after upload, and failed-document error display |
+
+Backend 728 tests green, frontend 93 (84 module + 9 component), ruff/mypy/tsc/eslint clean.
+
 ### Known limitations, accepted for now
 
 - **Rate limits bind authenticated abuse, not anonymous traffic.** A
@@ -241,7 +255,8 @@ verified to fail against the previous implementation.
 - **Quota windows are UTC.** "Daily" therefore resets at 07:00 WIB rather than
   midnight for Indonesian users. Consistent and predictable, but worth revisiting
   before selling daily-limited plans domestically.
-- **No component-level frontend tests.** The suite covers pure modules only, so a
-  regression in rendering or effect wiring would not be caught. The
-  `DocumentsPanel` polling bug is exactly the kind a component test would have
-  found.
+- **Component tests cover the billing and documents panels only.** The suite now
+  includes React Testing Library tests (`web/__tests__/components/`), and they
+  caught the payment-disabled rendering gap below, but `Chat` and
+  `IntegrationsPanel` are still exercised only through their pure modules.
+

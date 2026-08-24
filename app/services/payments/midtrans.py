@@ -61,6 +61,7 @@ class MidtransProvider:
     def client_config(self) -> dict[str, Any]:
         return {
             "provider": self.name,
+            "enabled": True,
             "is_production": settings.midtrans_is_production,
             "pro_price_idr": settings.pro_price_idr,
             "max_price_idr": settings.max_price_idr,

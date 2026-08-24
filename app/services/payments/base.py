@@ -132,7 +132,12 @@ class PaymentProvider(Protocol):
     supports_refund: bool
 
     def client_config(self) -> dict[str, Any]:
-        """Non-secret settings the frontend needs. Must never leak a secret."""
+        """Non-secret settings the frontend needs. Must never leak a secret.
+
+        Keys are normalised by ``PaymentConfigResponse``; a provider should
+        return ``provider`` plus ``enabled: True`` with pricing when it can
+        sell, or ``enabled: False`` with a ``reason`` when it cannot.
+        """
         ...
 
     def create_checkout(

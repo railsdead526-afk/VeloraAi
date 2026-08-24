@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models.billing import Payment
 from app.schemas.payment import (
+    PaymentConfigResponse,
     PaymentCreateRequest,
     PaymentCreateResponse,
     RefundRequest,
@@ -33,9 +34,14 @@ def _plan_amount(plan: str) -> int:
     return amount
 
 
-@router.get("/config")
+@router.get("/config", response_model=PaymentConfigResponse)
 def payment_config(current_user=Depends(get_current_user)):
-    """Non-secret settings the checkout UI needs, shaped by the active provider."""
+    """Non-secret settings the checkout UI needs, shaped by the active provider.
+
+    One response model covers both modes so the client cannot drift: an
+    enabled deployment exposes pricing, a disabled one exposes ``enabled:
+    false`` with a reason and no prices.
+    """
     try:
         return get_provider().client_config()
     except PaymentProviderError as exc:
