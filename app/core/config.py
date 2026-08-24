@@ -71,6 +71,11 @@ class Settings:
 
     document_max_upload_bytes = int(os.getenv("DOCUMENT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
+    #: The maintenance job is expected hourly. Past this age /ready reports the
+    #: job as stale: subscriptions stop expiring when it does not run, so the
+    #: silence has to be visible.
+    maintenance_max_age_minutes = int(os.getenv("MAINTENANCE_MAX_AGE_MINUTES", "180"))
+
     #: Which gateway handles web checkout. See app/services/payments/registry.py.
     payment_provider = os.getenv("PAYMENT_PROVIDER", "midtrans").strip().lower()
 
@@ -153,6 +158,8 @@ class Settings:
             )
         if self.document_max_upload_bytes < 1024:
             raise RuntimeError("DOCUMENT_MAX_UPLOAD_BYTES must be at least 1024 bytes")
+        if self.maintenance_max_age_minutes < 1:
+            raise RuntimeError("MAINTENANCE_MAX_AGE_MINUTES must be greater than zero")
         if self.embedding_batch_size < 1 or self.embedding_batch_size > 2048:
             raise RuntimeError("EMBEDDING_BATCH_SIZE must be between 1 and 2048")
         if self.payment_timeout_seconds <= 0:

@@ -15,12 +15,23 @@ def test_readiness_reports_every_dependency():
     body = response.json()
     assert set(body["checks"]) == {
         "database",
+        "maintenance",
         "rate_limit_storage",
         "ai_provider",
         "credential_encryption",
         "sandbox",
     }
     assert body["checks"]["database"]["status"] == "ok"
+
+
+def test_a_missing_maintenance_run_does_not_fail_readiness():
+    """A fresh deployment has never run the job; that must not block the deploy
+    that installs its schedule."""
+    response = client.get("/api/v1/ready")
+
+    assert response.status_code == 200
+    assert response.json()["checks"]["maintenance"]["status"] in {"unknown", "ok", "stale"}
+    assert response.json()["checks"]["maintenance"]["status"] != "error"
 
 
 def test_readiness_returns_503_when_a_dependency_is_down(monkeypatch):

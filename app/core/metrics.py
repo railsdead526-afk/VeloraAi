@@ -74,6 +74,14 @@ subscription_state = Gauge(
     registry=REGISTRY,
 )
 
+maintenance_age_seconds = Gauge(
+    "velora_maintenance_age_seconds",
+    "Seconds since the scheduled maintenance job last completed successfully. "
+    "-1 when it has never succeeded. Subscriptions stop expiring when this "
+    "stops advancing, so it is the metric to alert on.",
+    registry=REGISTRY,
+)
+
 quota_rejections_total = Counter(
     "velora_quota_rejections_total",
     "Requests refused because a plan quota was exhausted.",

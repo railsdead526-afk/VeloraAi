@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core import metrics
 from app.core.config import settings
 from app.core.database import get_db
+from app.services.maintenance_state import maintenance_health, seconds_since_last_success
 
 router = APIRouter(tags=["System"])
 
@@ -128,7 +129,13 @@ def health_check():
 @router.get("/ready")
 def readiness_check(response: Response, db: Session = Depends(get_db)):
     """Deep readiness across every dependency required to serve traffic."""
-    checks: dict[str, Any] = {"database": _check_database(db)}
+    checks: dict[str, Any] = {
+        "database": _check_database(db),
+        # Never fatal: a fresh deployment has legitimately never run the job,
+        # and failing readiness would block the deploy that installs the
+        # schedule. "stale" is the signal to alert on.
+        "maintenance": maintenance_health(db),
+    }
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {
@@ -170,7 +177,10 @@ def info():
 
 
 @router.get("/metrics", include_in_schema=False)
-def prometheus_metrics(authorization: str | None = Header(default=None)):
+def prometheus_metrics(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
     """Prometheus scrape endpoint.
 
     Protected by a bearer token whenever one is configured, because request
@@ -184,6 +194,11 @@ def prometheus_metrics(authorization: str | None = Header(default=None)):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid metrics token"
             )
+
+    # Sampled at scrape time: the job runs in a separate process, so its
+    # freshness can only be read from the database.
+    age = seconds_since_last_success(db)
+    metrics.maintenance_age_seconds.set(-1 if age is None else age)
 
     payload, content_type = metrics.render()
     return Response(content=payload, media_type=content_type)

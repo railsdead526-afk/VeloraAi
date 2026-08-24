@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
@@ -20,6 +21,12 @@ from app.core.metrics import subscription_state
 from app.core.observability import configure_logging
 from app.models.billing import Subscription
 from app.services.auth_tokens import purge_expired_tokens
+from app.services.maintenance_state import (
+    STATUS_FAILED,
+    STATUS_SUCCESS,
+    purge_old_runs,
+    record_run,
+)
 from app.services.quota_service import purge_settled_reservations
 from app.services.subscription_lifecycle import sweep_subscriptions
 
@@ -42,10 +49,12 @@ def refresh_subscription_gauges(db) -> dict[str, int]:
 def main() -> int:
     configure_logging()
     db = SessionLocal()
+    started_at = datetime.now(UTC)
     try:
         sweep = sweep_subscriptions(db)
         purged = purge_expired_tokens(db)
         purged["ai_request_reservations"] = purge_settled_reservations(db)
+        purged["maintenance_runs"] = purge_old_runs(db)
         gauges = refresh_subscription_gauges(db)
         report = {
             "event": "maintenance_completed",
@@ -53,11 +62,25 @@ def main() -> int:
             "purged": purged,
             "subscription_counts": gauges,
         }
+        # Recorded so /ready and /metrics can tell whether the schedule is
+        # actually firing. Without it, a cron entry that was never created is
+        # indistinguishable from one that runs cleanly every hour.
+        record_run(db, started_at=started_at, status=STATUS_SUCCESS, details=report)
         logger.info(json.dumps(report, separators=(",", ":")))
         print(json.dumps(report, indent=2))
         return 0
-    except Exception:
+    except Exception as exc:
         logger.exception("maintenance job failed")
+        try:
+            db.rollback()
+            record_run(
+                db,
+                started_at=started_at,
+                status=STATUS_FAILED,
+                error_type=type(exc).__name__,
+            )
+        except Exception:
+            logger.exception("could not record the maintenance failure")
         return 1
     finally:
         db.close()

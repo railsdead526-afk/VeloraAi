@@ -12,6 +12,7 @@ from app.models.conversation import Conversation
 from app.models.document import Document, DocumentChunk
 from app.models.embedding_usage import EmbeddingUsage
 from app.models.integration import UserIntegration
+from app.models.maintenance import MaintenanceRun
 from app.models.message import Message
 from app.models.tool_confirmation import ToolConfirmation
 from app.models.user import User
@@ -25,6 +26,7 @@ __all__ = [
     "DocumentChunk",
     "EmbeddingUsage",
     "LoginAttempt",
+    "MaintenanceRun",
     "Message",
     "Payment",
     "RefreshToken",
