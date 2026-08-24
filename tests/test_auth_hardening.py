@@ -17,6 +17,7 @@ from app.models.user import User
 from app.services.auth_tokens import (
     PURPOSE_PASSWORD_RESET,
     consume_verification_token,
+    hash_opaque_token,
     is_locked_out,
     issue_refresh_token,
     issue_verification_token,
@@ -147,12 +148,26 @@ def test_refresh_rotates_the_token_and_invalidates_the_old_one():
 
 
 def test_refresh_token_reuse_destroys_every_session(db):
+    """A consumed token replayed later is theft, and tears down the family.
+
+    The replay has to be aged past the rotation grace window first. Inside that
+    window a repeat is two browser tabs racing rather than an attacker, and is
+    handled by test_refresh_rotation_race.py.
+    """
     user = _make_user(db, "reuse@example.com")
     token = issue_refresh_token(db, user_id=user.id)
     other = issue_refresh_token(db, user_id=user.id)
 
     assert rotate_refresh_token(db, token=token) is not None
-    # Replaying the consumed token is treated as theft.
+
+    record = (
+        db.query(RefreshToken).filter(RefreshToken.token_hash == hash_opaque_token(token)).one()
+    )
+    record.revoked_at = record.revoked_at - timedelta(
+        seconds=settings.refresh_rotation_grace_seconds + 60
+    )
+    db.commit()
+
     assert rotate_refresh_token(db, token=token) is None
 
     db.expire_all()

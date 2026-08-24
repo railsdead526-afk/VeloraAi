@@ -31,6 +31,10 @@ class Settings:
     algorithm = os.getenv("ALGORITHM", "HS256")
     access_token_expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     refresh_token_expire_days = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    #: Window after a rotation during which replaying the old refresh token is
+    #: treated as two tabs racing rather than as theft. Long enough to cover a
+    #: slow request, far too short to be useful to an attacker.
+    refresh_rotation_grace_seconds = int(os.getenv("REFRESH_ROTATION_GRACE_SECONDS", "30"))
     max_active_sessions = int(os.getenv("MAX_ACTIVE_SESSIONS", "10"))
 
     # Encryption keys for third-party credentials stored at rest.
@@ -123,6 +127,8 @@ class Settings:
             raise RuntimeError("DATABASE_SCHEMA must be a valid PostgreSQL identifier")
         if self.access_token_expire_minutes < 1:
             raise RuntimeError("ACCESS_TOKEN_EXPIRE_MINUTES must be greater than zero")
+        if self.refresh_rotation_grace_seconds < 0 or self.refresh_rotation_grace_seconds > 300:
+            raise RuntimeError("REFRESH_ROTATION_GRACE_SECONDS must be between 0 and 300")
         if self.refresh_token_expire_days < 1:
             raise RuntimeError("REFRESH_TOKEN_EXPIRE_DAYS must be greater than zero")
         if self.max_active_sessions < 1:

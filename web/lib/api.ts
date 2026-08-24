@@ -158,10 +158,20 @@ async function refreshSession(): Promise<boolean> {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
-        if (!response.ok) return false
-        const tokens = (await response.json()) as TokenResponse
-        storeSession(tokens)
-        return true
+        if (response.ok) {
+          const tokens = (await response.json()) as TokenResponse
+          storeSession(tokens)
+          return true
+        }
+
+        // The in-flight promise only dedupes within one tab. Two tabs share
+        // localStorage but not this module, so both can refresh with the same
+        // token and one will lose. If the winner has already written a new
+        // token, adopt it instead of signing this tab out.
+        const current = getRefreshToken()
+        if (current && current !== refreshToken) return true
+
+        return false
       } catch {
         return false
       } finally {

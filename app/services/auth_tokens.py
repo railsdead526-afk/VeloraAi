@@ -8,6 +8,7 @@ theft and revokes the whole family for that user.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -28,6 +29,9 @@ from app.models.user import User
 
 PURPOSE_EMAIL_VERIFICATION = "email_verification"
 PURPOSE_PASSWORD_RESET = "password_reset"  # noqa: S105 - an enum value, not a secret
+
+
+logger = logging.getLogger("veloraai.auth")
 
 
 def _now() -> datetime:
@@ -128,7 +132,32 @@ def rotate_refresh_token(
         return None
 
     if record.revoked_at is not None:
-        # Replay of a rotated token: assume compromise, drop the whole family.
+        # Distinguish two very different situations that look identical here.
+        #
+        # A stolen token replayed later must tear down the family - that is the
+        # whole point of rotation. But two browser tabs whose access tokens
+        # expire together both refresh with the same stored token, and the
+        # loser arrives milliseconds after the winner. Treating that as theft
+        # signed the user out of every device, including the phone in their
+        # pocket, for doing nothing wrong.
+        #
+        # Inside the grace window the loser simply gets a 401 and can retry
+        # with the token the winner stored.
+        grace = timedelta(seconds=settings.refresh_rotation_grace_seconds)
+        rotated_recently = (
+            record.revoked_reason == "rotated" and _now() - record.revoked_at <= grace
+        )
+        if rotated_recently:
+            logger.info(
+                "Refresh token replayed inside the rotation grace window",
+                extra={"user_id": record.user_id},
+            )
+            return None
+
+        logger.warning(
+            "Refresh token reuse detected; revoking every session",
+            extra={"user_id": record.user_id, "revoked_reason": record.revoked_reason},
+        )
         revoke_all_sessions(db, user_id=record.user_id, reason="reuse_detected")
         return None
 
