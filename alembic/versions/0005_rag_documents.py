@@ -16,7 +16,10 @@ depends_on = None
 
 
 def upgrade():
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    bind = op.get_bind()
+    is_postgresql = bind.dialect.name == "postgresql"
+    if is_postgresql:
+        op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     op.create_table(
         "documents",
@@ -45,16 +48,18 @@ def upgrade():
     )
     op.create_index("ix_document_chunks_id", "document_chunks", ["id"])
     op.create_index("ix_document_chunks_document_id", "document_chunks", ["document_id"])
-    op.execute(
-        """
-        CREATE INDEX ix_document_chunks_embedding_hnsw
-        ON document_chunks USING hnsw (embedding vector_cosine_ops)
-        """
-    )
+    if is_postgresql:
+        op.execute(
+            """
+            CREATE INDEX ix_document_chunks_embedding_hnsw
+            ON document_chunks USING hnsw (embedding vector_cosine_ops)
+            """
+        )
 
 
 def downgrade():
-    op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_hnsw")
+    if op.get_bind().dialect.name == "postgresql":
+        op.execute("DROP INDEX IF EXISTS ix_document_chunks_embedding_hnsw")
     op.drop_index("ix_document_chunks_document_id", table_name="document_chunks")
     op.drop_index("ix_document_chunks_id", table_name="document_chunks")
     op.drop_table("document_chunks")

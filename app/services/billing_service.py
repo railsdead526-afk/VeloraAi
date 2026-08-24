@@ -42,6 +42,7 @@ def sync_user_role(db: Session, *, user_id: int) -> None:
     if user is None or user.role == "admin":
         return
 
+    db.flush()
     active_plans = db.execute(
         select(Subscription.plan).where(
             Subscription.user_id == user_id,
@@ -99,6 +100,21 @@ def apply_payment_notification(
         else:
             subscription.plan = payment.plan
             subscription.status = "active"
+            subscription.canceled_at = None
+
+        active_subscriptions = db.execute(
+            select(Subscription)
+            .where(
+                Subscription.user_id == payment.user_id,
+                Subscription.status == "active",
+                Subscription.id != subscription.id,
+            )
+            .with_for_update()
+        ).scalars().all()
+        cancellation_time = datetime.now(timezone.utc)
+        for active_subscription in active_subscriptions:
+            active_subscription.status = "canceled"
+            active_subscription.canceled_at = active_subscription.canceled_at or cancellation_time
 
         sync_user_role(db, user_id=payment.user_id)
     elif normalized in FAILED_STATUSES:

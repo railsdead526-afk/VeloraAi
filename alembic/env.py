@@ -5,7 +5,7 @@ from sqlalchemy.engine import make_url
 from alembic import context
 
 from app.core.database import Base
-from app.models import user, conversation, message, ai_usage, embedding_usage
+import app.models  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

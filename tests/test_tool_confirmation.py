@@ -11,6 +11,7 @@ def test_confirmation_token_is_single_use(db, user):
 
     arguments = {"repository": "railsdead526-afk/VeloraAi", "path": "README.md"}
     token = create_confirmation_token(
+        db,
         user_id=user.id,
         conversation_id=conversation.id,
         tool_name="github_write_file",
@@ -18,6 +19,7 @@ def test_confirmation_token_is_single_use(db, user):
     )
 
     assert verify_confirmation_token(
+        db,
         token,
         user_id=user.id,
         conversation_id=conversation.id,
@@ -26,6 +28,7 @@ def test_confirmation_token_is_single_use(db, user):
     ) is True
 
     assert verify_confirmation_token(
+        db,
         token,
         user_id=user.id,
         conversation_id=conversation.id,

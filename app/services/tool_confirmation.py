@@ -10,9 +10,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, update
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.database import SessionLocal
 from app.models.tool_confirmation import ToolConfirmation
 
 CONFIRMATION_TTL_SECONDS = 300
@@ -54,6 +54,7 @@ def _token_hash(token: str) -> str:
 
 
 def create_confirmation_token(
+    db: Session,
     *,
     user_id: int,
     conversation_id: int,
@@ -69,26 +70,24 @@ def create_confirmation_token(
         "exp": expires_at,
     }
     token = _encode(payload)
-
-    with SessionLocal() as db:
-        now = datetime.now(UTC)
-        db.execute(delete(ToolConfirmation).where(ToolConfirmation.expires_at < now))
-        db.add(
-            ToolConfirmation(
-                token_hash=_token_hash(token),
-                user_id=user_id,
-                conversation_id=conversation_id,
-                tool_name=tool_name,
-                arguments_hash=payload["args"],
-                expires_at=datetime.fromtimestamp(expires_at, tz=UTC),
-            )
+    now = datetime.now(UTC)
+    db.execute(delete(ToolConfirmation).where(ToolConfirmation.expires_at < now))
+    db.add(
+        ToolConfirmation(
+            token_hash=_token_hash(token),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            tool_name=tool_name,
+            arguments_hash=payload["args"],
+            expires_at=datetime.fromtimestamp(expires_at, tz=UTC),
         )
-        db.commit()
-
+    )
+    db.commit()
     return token
 
 
 def verify_confirmation_token(
+    db: Session,
     token: str | None,
     *,
     user_id: int,
@@ -118,20 +117,18 @@ def verify_confirmation_token(
         return False
 
     now = datetime.now(UTC)
-    with SessionLocal() as db:
-        result = db.execute(
-            update(ToolConfirmation)
-            .where(
-                ToolConfirmation.token_hash == _token_hash(token),
-                ToolConfirmation.user_id == user_id,
-                ToolConfirmation.conversation_id == conversation_id,
-                ToolConfirmation.tool_name == tool_name,
-                ToolConfirmation.arguments_hash == arguments_hash,
-                ToolConfirmation.used_at.is_(None),
-                ToolConfirmation.expires_at >= now,
-            )
-            .values(used_at=now)
+    result = db.execute(
+        update(ToolConfirmation)
+        .where(
+            ToolConfirmation.token_hash == _token_hash(token),
+            ToolConfirmation.user_id == user_id,
+            ToolConfirmation.conversation_id == conversation_id,
+            ToolConfirmation.tool_name == tool_name,
+            ToolConfirmation.arguments_hash == arguments_hash,
+            ToolConfirmation.used_at.is_(None),
+            ToolConfirmation.expires_at >= now,
         )
-        db.commit()
-
+        .values(used_at=now)
+    )
+    db.commit()
     return result.rowcount == 1
