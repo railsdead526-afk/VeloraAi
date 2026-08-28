@@ -13,12 +13,13 @@ def register_login(email: str):
 
 
 def test_manual_payment_create_and_admin_approve(monkeypatch):
-    headers = register_login("manual-flow@example.com")
+    buyer_headers = register_login("manual-buyer@example.com")
+    register_login("manual-admin@example.com")
     monkeypatch.setattr("app.api.v1.payments.settings.payment_provider", "manual")
     monkeypatch.setattr("app.api.v1.payments.settings.pro_price_idr", 19900)
     monkeypatch.setattr("app.api.v1.payments.settings.manual_payment_instructions", "Transfer ke rekening admin")
 
-    created = client.post("/api/v1/payments/create", headers=headers, json={"plan": "pro"})
+    created = client.post("/api/v1/payments/create", headers=buyer_headers, json={"plan": "pro"})
     assert created.status_code == 200
     body = created.json()
     assert body["payment_provider"] == "manual"
@@ -30,23 +31,18 @@ def test_manual_payment_create_and_admin_approve(monkeypatch):
     try:
         payment = db.query(Payment).filter(Payment.provider_order_id == order_id).one()
         payment_id = payment.id
-    finally:
-        db.close()
-
-    denied = client.post(f"/api/v1/payments/{payment_id}/approve", headers=headers)
-    assert denied.status_code == 403
-
-    db = TestingSessionLocal()
-    try:
-        user = db.query(User).filter(User.email == "manual-flow@example.com").one()
-        user.role = "admin"
+        admin = db.query(User).filter(User.email == "manual-admin@example.com").one()
+        admin.role = "admin"
         db.commit()
     finally:
         db.close()
 
+    denied = client.post(f"/api/v1/payments/{payment_id}/approve", headers=buyer_headers)
+    assert denied.status_code == 403
+
     login = client.post(
         "/api/v1/auth/login",
-        json={"email": "manual-flow@example.com", "password": "securepass123"},
+        json={"email": "manual-admin@example.com", "password": "securepass123"},
     )
     admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
@@ -61,10 +57,10 @@ def test_manual_payment_create_and_admin_approve(monkeypatch):
     db = TestingSessionLocal()
     try:
         payment = db.query(Payment).filter(Payment.id == payment_id).one()
-        user = db.query(User).filter(User.id == payment.user_id).one()
-        subscription = db.query(Subscription).filter(Subscription.user_id == payment.user_id).one()
+        buyer = db.query(User).filter(User.email == "manual-buyer@example.com").one()
+        subscription = db.query(Subscription).filter(Subscription.user_id == buyer.id).one()
         assert payment.status == "settlement"
-        assert user.role == "pro"
+        assert buyer.role == "pro"
         assert subscription.status == "active"
     finally:
         db.close()
