@@ -30,14 +30,19 @@ def test_manual_payment_create_and_admin_approve(monkeypatch):
     try:
         payment = db.query(Payment).filter(Payment.provider_order_id == order_id).one()
         payment_id = payment.id
-        user = db.query(User).filter(User.id == payment.user_id).one()
-        user.role = "admin"
-        db.commit()
     finally:
         db.close()
 
     denied = client.post(f"/api/v1/payments/{payment_id}/approve", headers=headers)
     assert denied.status_code == 403
+
+    db = TestingSessionLocal()
+    try:
+        user = db.query(User).filter(User.email == "manual-flow@example.com").one()
+        user.role = "admin"
+        db.commit()
+    finally:
+        db.close()
 
     login = client.post(
         "/api/v1/auth/login",
