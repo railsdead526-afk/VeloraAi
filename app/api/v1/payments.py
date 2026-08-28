@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -32,6 +32,14 @@ def checkout_page():
 
 @router.get("/config")
 def payment_config(current_user=Depends(get_current_user)):
+    if settings.payment_provider == "manual":
+        return {
+            "provider": "manual",
+            "instructions": settings.manual_payment_instructions,
+            "valid_hours": settings.manual_payment_valid_hours,
+            "pro_price_idr": settings.pro_price_idr,
+            "max_price_idr": settings.max_price_idr,
+        }
     if not settings.midtrans_client_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment client is not configured")
     return {
@@ -60,6 +68,24 @@ def create_payment(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    if settings.payment_provider == "manual":
+        payment = create_payment_intent(
+            db,
+            user_id=current_user.id,
+            plan=payload.plan,
+            amount=_plan_amount(payload.plan),
+            provider="manual",
+        )
+        return PaymentCreateResponse(
+            order_id=payment.provider_order_id,
+            amount=payment.amount,
+            currency=payment.currency,
+            status=payment.status,
+            payment_provider="manual",
+            manual_instructions=settings.manual_payment_instructions,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=settings.manual_payment_valid_hours),
+        )
+
     payment = create_payment_intent(
         db,
         user_id=current_user.id,
@@ -82,6 +108,8 @@ def create_payment(
         order_id=payment.provider_order_id,
         amount=payment.amount,
         currency=payment.currency,
+        status=payment.status,
+        payment_provider="midtrans",
         snap_token=result["token"],
         redirect_url=result["redirect_url"],
     )
@@ -129,6 +157,41 @@ def payment_notification(payload: dict, db: Session = Depends(get_db)):
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     return {"status": "ok"}
+
+
+@router.post("/{payment_id}/approve", dependencies=[Depends(require_roles("admin"))])
+@limiter.limit("10/minute")
+def approve_manual_payment(
+    request: Request,
+    payment_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Admin-only confirmation for manually verified payments (bank transfer / e-wallet)."""
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    if payment.provider != "manual":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only manual payments can be approved here")
+    if payment.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Payment is already {payment.status}")
+
+    updated = apply_payment_notification(
+        db,
+        provider="manual",
+        provider_order_id=payment.provider_order_id,
+        provider_transaction_id=f"manual-{payment.id}",
+        transaction_status="settlement",
+        payment_type="manual",
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return {
+        "status": updated.status,
+        "payment_id": updated.id,
+        "plan": updated.plan,
+        "user_role": updated.subscription.plan if updated.subscription is not None else "free",
+    }
 
 
 @router.post("/{payment_id}/refund", dependencies=[Depends(require_roles("admin"))])

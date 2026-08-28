@@ -64,6 +64,8 @@ def _embedding_config() -> tuple[str, str, str]:
             base_url, api_key = settings.openai_base_url, settings.openai_api_key
         elif settings.ai_provider == "llama":
             base_url, api_key = settings.llama_base_url, settings.llama_api_key
+        elif settings.ai_provider == "gemini":
+            base_url, api_key = settings.gemini_base_url, settings.gemini_api_key
     if not base_url or not model:
         raise RAGError("Embedding provider is not configured")
     return base_url.rstrip("/"), api_key, model

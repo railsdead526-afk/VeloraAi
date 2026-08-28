@@ -24,6 +24,9 @@ class Settings:
     llama_api_key = os.getenv("LLAMA_API_KEY", "")
     llama_model = os.getenv("LLAMA_MODEL", "Llama-3.1-8B-Instruct")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    gemini_base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai").rstrip("/")
     embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
     embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "").rstrip("/")
     embedding_api_key = os.getenv("EMBEDDING_API_KEY", "")
@@ -47,6 +50,12 @@ class Settings:
     payment_timeout_seconds = float(os.getenv("PAYMENT_TIMEOUT_SECONDS", "15"))
     pro_price_idr = int(os.getenv("PRO_PRICE_IDR", "0"))
     max_price_idr = int(os.getenv("MAX_PRICE_IDR", "0"))
+    payment_provider = os.getenv("PAYMENT_PROVIDER", "midtrans").lower()
+    manual_payment_instructions = os.getenv(
+        "MANUAL_PAYMENT_INSTRUCTIONS",
+        "Hubungi admin VeloraAi via WhatsApp/Telegram untuk menyelesaikan pembayaran manual.",
+    )
+    manual_payment_valid_hours = int(os.getenv("MANUAL_PAYMENT_VALID_HOURS", "48"))
 
     rate_limit_default = os.getenv("RATE_LIMIT_DEFAULT", "120/minute")
     rate_limit_auth = os.getenv("RATE_LIMIT_AUTH", "10/minute")
@@ -88,8 +97,12 @@ class Settings:
             raise RuntimeError("PAYMENT_TIMEOUT_SECONDS must be greater than zero")
         if self.pro_price_idr < 0 or self.max_price_idr < 0:
             raise RuntimeError("Plan prices cannot be negative")
-        if self.ai_provider not in {"mock", "openai", "llama"}:
-            raise RuntimeError("AI_PROVIDER must be either mock, openai, or llama")
+        if self.ai_provider not in {"mock", "openai", "llama", "gemini"}:
+            raise RuntimeError("AI_PROVIDER must be either mock, openai, llama, or gemini")
+        if self.payment_provider not in {"midtrans", "manual"}:
+            raise RuntimeError("PAYMENT_PROVIDER must be either midtrans or manual")
+        if self.manual_payment_valid_hours < 1 or self.manual_payment_valid_hours > 720:
+            raise RuntimeError("MANUAL_PAYMENT_VALID_HOURS must be between 1 and 720")
         for proxy in self.trusted_proxy_ips:
             try:
                 ipaddress.ip_network(proxy, strict=False)
@@ -115,20 +128,23 @@ class Settings:
                 raise RuntimeError("OPENAI_API_KEY must be configured when AI_PROVIDER=openai")
             if self.ai_provider == "llama" and not self.llama_base_url:
                 raise RuntimeError("LLAMA_BASE_URL must be configured when AI_PROVIDER=llama")
+            if self.ai_provider == "gemini" and not self.gemini_api_key:
+                raise RuntimeError("GEMINI_API_KEY must be configured when AI_PROVIDER=gemini")
             if self.rate_limit_storage_uri == "memory://":
                 raise RuntimeError("RATE_LIMIT_STORAGE_URI must use shared storage in production")
             if not self.cors_origins:
                 raise RuntimeError("CORS_ORIGINS must be configured in production")
             if "*" in self.cors_origins:
                 raise RuntimeError("CORS_ORIGINS must not use * when credentials are enabled")
-            if not self.midtrans_server_key or not self.midtrans_client_key:
-                raise RuntimeError("Midtrans credentials must be configured in production")
-            if not self.midtrans_is_production:
-                raise RuntimeError("MIDTRANS_IS_PRODUCTION must be true in production")
-            if self.midtrans_base_url != "https://api.midtrans.com":
-                raise RuntimeError("MIDTRANS_BASE_URL must use the production Midtrans API endpoint")
-            if self.midtrans_snap_base_url != "https://app.midtrans.com":
-                raise RuntimeError("MIDTRANS_SNAP_BASE_URL must use the production Midtrans Snap endpoint")
+            if self.payment_provider == "midtrans":
+                if not self.midtrans_server_key or not self.midtrans_client_key:
+                    raise RuntimeError("Midtrans credentials must be configured in production")
+                if not self.midtrans_is_production:
+                    raise RuntimeError("MIDTRANS_IS_PRODUCTION must be true in production")
+                if self.midtrans_base_url != "https://api.midtrans.com":
+                    raise RuntimeError("MIDTRANS_BASE_URL must use the production Midtrans API endpoint")
+                if self.midtrans_snap_base_url != "https://app.midtrans.com":
+                    raise RuntimeError("MIDTRANS_SNAP_BASE_URL must use the production Midtrans Snap endpoint")
             if self.pro_price_idr <= 0 or self.max_price_idr <= 0:
                 raise RuntimeError("Pro and Max prices must be configured in production")
 

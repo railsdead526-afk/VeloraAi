@@ -115,11 +115,11 @@ def generate_ai_reply_with_tools(
         from app.services.ai_service import _mock_result
         return _mock_result(messages)
 
-    if settings.ai_provider not in {"openai", "llama"}:
+    if settings.ai_provider not in {"openai", "llama", "gemini"}:
         raise RuntimeError("AI provider is not configured")
 
     api_key, base_url, model, provider = _provider_config()
-    if provider == "openai" and not api_key:
+    if provider in {"openai", "gemini"} and not api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     api_messages = _build_api_messages(messages)
@@ -216,11 +216,11 @@ async def generate_ai_reply_with_tools_async(
     if settings.ai_provider == "mock":
         from app.services.ai_service import _mock_result
         return _mock_result(messages)
-    if settings.ai_provider not in {"openai", "llama"}:
+    if settings.ai_provider not in {"openai", "llama", "gemini"}:
         raise RuntimeError("AI provider is not configured")
 
     api_key, base_url, model, provider = _provider_config()
-    if provider == "openai" and not api_key:
+    if provider in {"openai", "gemini"} and not api_key:
         raise RuntimeError("AI provider belum dikonfigurasikan")
 
     api_messages = _build_api_messages(messages)
