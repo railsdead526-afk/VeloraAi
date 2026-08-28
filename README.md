@@ -11,6 +11,8 @@ VeloraAi adalah backend AI API berbasis FastAPI untuk autentikasi pengguna, perc
 - Message history
 - AI chat dengan bounded context
 - AI retry dan timeout
+- Multi-provider AI: OpenAI, Gemini (via endpoint OpenAI-compatible), Llama, mock
+- Pembayaran manual dengan persetujuan admin (tanpa gateway, tanpa kartu kredit)
 - Streaming AI melalui Server-Sent Events (SSE)
 - AI usage/token tracking
 - PostgreSQL support
@@ -43,6 +45,10 @@ uvicorn app.main:app --reload
 ```
 
 Untuk production, gunakan PostgreSQL, shared rate-limit storage, `SECRET_KEY` yang kuat, dan konfigurasi AI provider yang valid. Jangan aktifkan debug di production.
+
+Pilih AI provider lewat `AI_PROVIDER`: `gemini` (Google Gemini via endpoint OpenAI-compatible, set `GEMINI_API_KEY`), `openai`, `llama`, atau `mock`. Upgrade dari Gemini ke OpenAI cukup ganti env tanpa mengubah kode.
+
+Pembayaran: set `PAYMENT_PROVIDER=manual` untuk mode manual — user mendapat instruksi transfer, lalu admin menyetujui pembayaran lewat `POST /api/v1/payments/{payment_id}/approve` sehingga langganan dan role user diaktifkan otomatis. Set `PAYMENT_PROVIDER=midtrans` untuk kembali ke Snap gateway.
 
 ## Database Migration
 

@@ -20,7 +20,7 @@ class AIProviderConfig:
     model: str
 
 
-SUPPORTED_PROVIDERS = frozenset({"mock", "openai", "llama"})
+SUPPORTED_PROVIDERS = frozenset({"mock", "openai", "llama", "gemini"})
 
 
 def get_provider_config() -> AIProviderConfig:
@@ -29,6 +29,8 @@ def get_provider_config() -> AIProviderConfig:
         return AIProviderConfig("openai", settings.openai_api_key, settings.openai_base_url, settings.openai_model)
     if provider == "llama":
         return AIProviderConfig("llama", settings.llama_api_key, settings.llama_base_url, settings.llama_model)
+    if provider == "gemini":
+        return AIProviderConfig("gemini", settings.gemini_api_key, settings.gemini_base_url, settings.gemini_model)
     if provider == "mock":
         return AIProviderConfig("mock", "", "", "mock")
     raise RuntimeError("AI provider is not configured")

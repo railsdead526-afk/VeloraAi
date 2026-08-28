@@ -106,9 +106,9 @@ async def stream_ai_reply_with_tools(
         )
         return
 
-    if config.name not in {"openai", "llama"}:
+    if config.name not in {"openai", "llama", "gemini"}:
         raise RuntimeError("AI provider is not configured")
-    if config.name == "openai" and not config.api_key:
+    if config.name in {"openai", "gemini"} and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     api_messages = build_api_messages(messages)

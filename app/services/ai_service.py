@@ -55,7 +55,7 @@ def _request_openai_compatible(messages: list[dict]) -> AIResult:
     config = get_provider_config()
     if config.name == "mock":
         return _mock_result(messages)
-    if config.name == "openai" and not config.api_key:
+    if config.name in {"openai", "gemini"} and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
@@ -158,9 +158,9 @@ async def stream_ai_reply_from_history(
             yield word if index == 0 else f" {word}"
         return
 
-    if config.name not in {"openai", "llama"}:
+    if config.name not in {"openai", "llama", "gemini"}:
         raise RuntimeError("AI provider is not configured")
-    if config.name == "openai" and not config.api_key:
+    if config.name in {"openai", "gemini"} and not config.api_key:
         raise RuntimeError("AI provider belum dikonfigurasi")
 
     last_error = None
