@@ -31,7 +31,9 @@ export default function ChatHeader({ onToggleSidebar, activeChatId, setActiveCha
         </button>
         {activeChatId !== null && activeChatId !== undefined && (
           <button
-            onClick={() => setActiveChat?.(null)}
+            onClick={() => {
+              if (setActiveChat) setActiveChat(null)
+            }}
             className="p-2 rounded-lg hover:bg-tertiary transition-smooth"
             aria-label="Close chat"
           >
