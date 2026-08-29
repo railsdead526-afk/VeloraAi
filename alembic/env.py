@@ -43,6 +43,10 @@ def run_migrations_online():
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Pooled providers (e.g. Supabase Supavisor) may strip the `options`
+        # startup parameter, so the search path must be set per connection.
+        if database_schema != "public":
+            connection.exec_driver_sql(f'SET search_path TO "{database_schema}", public')
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
