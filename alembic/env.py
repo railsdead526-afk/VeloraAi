@@ -47,6 +47,12 @@ def run_migrations_online():
         # startup parameter, so the search path must be set per connection.
         if database_schema != "public":
             connection.exec_driver_sql(f'SET search_path TO "{database_schema}", public')
+            # The SET starts an implicit transaction; commit it immediately so
+            # alembic's begin_transaction() opens (and later commits) a NEW fresh
+            # transaction. Without this, the migration SQL is executed inside the
+            # implicit txn and gets ROLLED BACK at connection close — all tables
+            # silently vanish even though alembic reports success.
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
