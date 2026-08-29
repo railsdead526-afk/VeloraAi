@@ -61,8 +61,8 @@ export default function QuotaBadge() {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, opacity: 0.72 }}>
-        <span>Daily AI usage</span>
-        <strong style={{ opacity: 1 }}>{remaining} left</strong>
+        <span>Daily limits</span>
+        <strong style={{ opacity: 1 }}>{remaining} left today</strong>
       </div>
       <div style={{ marginTop: 7, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.10)', overflow: 'hidden' }}>
         <div style={{ width: `${percentage}%`, height: '100%', background: 'rgba(255,255,255,0.78)', borderRadius: 999 }} />
