@@ -46,6 +46,11 @@ def run_migrations_online():
         # Pooled providers (e.g. Supabase Supavisor) may strip the `options`
         # startup parameter, so the search path must be set per connection.
         if database_schema != "public":
+            # The schema may not exist yet on a fresh database (e.g. Supabase
+            # projects where only `public` is present). Create it first so the
+            # migrations don't fail with "no schema has been selected to
+            # create in".
+            connection.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{database_schema}"')
             connection.exec_driver_sql(f'SET search_path TO "{database_schema}", public')
             # The SET starts an implicit transaction; commit it immediately so
             # alembic's begin_transaction() opens (and later commits) a NEW fresh
