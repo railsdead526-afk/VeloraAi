@@ -150,7 +150,7 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
     )
 
     try:
-        if settings.ai_provider in {"openai", "llama", "gemini"}:
+        if settings.ai_provider in {"openai", "llama"}:
             ai_result = generate_ai_reply_with_tools(
                 history_payload,
                 plan=getattr(current_user, "role", "free"),
@@ -226,7 +226,7 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     async def event_stream():
         chunks: list[str] = []
         try:
-            if settings.ai_provider in {"openai", "llama", "gemini"}:
+            if settings.ai_provider in {"openai", "llama"}:
                 ai_result = await generate_ai_reply_with_tools_async(
                     history_payload,
                     plan=getattr(current_user, "role", "free"),

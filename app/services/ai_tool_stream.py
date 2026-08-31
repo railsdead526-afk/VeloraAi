@@ -199,8 +199,8 @@ async def stream_ai_reply_with_tools(
                     await _backoff(attempt)
 
             if last_error is not None:
-                logger.exception("Streaming AI tool-loop request failed")
-                raise RuntimeError("AI service temporarily unavailable") from last_error
+                logger.exception("Streaming AI tool-loop request failed: %s", last_error)
+                raise RuntimeError(f"AI service temporarily unavailable: {last_error}") from last_error
 
             if not tool_calls:
                 if not assistant_content_parts:

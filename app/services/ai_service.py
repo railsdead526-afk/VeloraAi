@@ -92,7 +92,7 @@ def _request_openai_compatible(messages: list[dict]) -> AIResult:
                 continue
             break
 
-    raise RuntimeError("AI service temporarily unavailable") from last_error
+    raise RuntimeError(f"AI service temporarily unavailable: {last_error}") from last_error
 
 
 def _mock_result(messages: list[dict]) -> AIResult:
@@ -223,7 +223,7 @@ async def stream_ai_reply_from_history(
                 continue
             break
 
-    raise RuntimeError("AI service temporarily unavailable") from last_error
+    raise RuntimeError(f"AI service temporarily unavailable: {last_error}") from last_error
 
 
 async def _async_backoff(attempt: int) -> None:
