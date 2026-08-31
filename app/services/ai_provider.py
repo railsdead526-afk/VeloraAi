@@ -53,10 +53,38 @@ def build_api_messages(messages: list[dict]) -> list[dict]:
 
 def parse_usage(data: dict) -> tuple[Optional[int], Optional[int]]:
     usage = data.get("usage") or {}
-    input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
-    output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+    # OpenAI: prompt_tokens/completion_tokens, also handles input_tokens/output_tokens
+    # Gemini via OpenAI compat may use promptTokenCount/candidatesTokenCount or totalTokenCount
+    input_tokens = (
+        usage.get("prompt_tokens")
+        or usage.get("input_tokens")
+        or usage.get("promptTokenCount")
+        or usage.get("prompt_tokens_count")
+        or usage.get("inputTokenCount")
+    )
+    output_tokens = (
+        usage.get("completion_tokens")
+        or usage.get("output_tokens")
+        or usage.get("candidatesTokenCount")
+        or usage.get("completion_tokens_count")
+        or usage.get("outputTokenCount")
+        or usage.get("candidates_token_count")
+    )
+    # Some providers only return total_tokens; estimate split if needed
+    if input_tokens is None and output_tokens is None:
+        total = usage.get("total_tokens") or usage.get("totalTokenCount") or usage.get("total_token_count")
+        if isinstance(total, int) and total > 0:
+            # fallback: split total roughly in half if we can't distinguish
+            # caller will refine with actual chunk sizes; here just provide total
+            return total // 2, total - total // 2
     if isinstance(input_tokens, int) and isinstance(output_tokens, int):
         return input_tokens, output_tokens
+    # allow numeric strings
+    try:
+        if input_tokens is not None and output_tokens is not None:
+            return int(input_tokens), int(output_tokens)
+    except (TypeError, ValueError):
+        pass
     return None, None
 
 

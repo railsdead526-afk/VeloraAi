@@ -205,6 +205,13 @@ async def stream_ai_reply_with_tools(
             if not tool_calls:
                 if not assistant_content_parts:
                     raise RuntimeError("AI provider returned an empty response")
+                # if provider didn't return usage, estimate so caller doesn't error
+                if not usage_seen:
+                    estimated_input = max(1, sum(len(m.get("content","")) for m in api_messages) // 4)
+                    estimated_output = max(1, len("".join(assistant_content_parts)) // 4)
+                    total_input_tokens = estimated_input
+                    total_output_tokens = estimated_output
+                    usage_seen = True
                 yield AgentStreamEvent(
                     type="done",
                     input_tokens=total_input_tokens if usage_seen else None,

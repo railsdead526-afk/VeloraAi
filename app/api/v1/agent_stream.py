@@ -83,7 +83,7 @@ def stream_native_message(
         usage = {"input_tokens": None, "output_tokens": None, "model": None}
         confirmation_required = False
         try:
-            if settings.ai_provider in {"openai", "llama"}:
+            if settings.ai_provider in {"openai", "llama", "gemini"}:
                 async for event in stream_ai_reply_with_tools(
                     history_payload,
                     db=db,
@@ -147,8 +147,16 @@ def stream_native_message(
             input_tokens = usage.get("input_tokens")
             output_tokens = usage.get("output_tokens")
             model = usage.get("model")
-            if input_tokens is None or output_tokens is None or not model:
-                raise RuntimeError("AI provider did not return token usage")
+            # Fallback if provider didn't return usage (e.g. Gemini streaming without include_usage)
+            if input_tokens is None or output_tokens is None:
+                # estimate: ~4 chars per token
+                estimated_input = max(1, sum(len(m.get("content", "")) for m in history_payload) // 4)
+                estimated_output = max(1, len(assistant_reply) // 4)
+                input_tokens = input_tokens if input_tokens is not None else estimated_input
+                output_tokens = output_tokens if output_tokens is not None else estimated_output
+            if not model:
+                model = settings.ai_provider if settings.ai_provider != "mock" else "mock"
+                usage["model"] = model
 
             user_message = create_message(
                 db,

@@ -150,7 +150,7 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
     )
 
     try:
-        if settings.ai_provider in {"openai", "llama"}:
+        if settings.ai_provider in {"openai", "llama", "gemini"}:
             ai_result = generate_ai_reply_with_tools(
                 history_payload,
                 plan=getattr(current_user, "role", "free"),
@@ -162,8 +162,12 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
 
         input_tokens = ai_result.input_tokens
         output_tokens = ai_result.output_tokens
+        # fallback if provider didn't return usage
         if input_tokens is None or output_tokens is None:
-            raise RuntimeError("AI provider did not return token usage")
+            estimated_input = max(1, sum(len(m.get("content", "")) for m in history_payload) // 4)
+            estimated_output = max(1, len(ai_result.content) // 4)
+            input_tokens = input_tokens if input_tokens is not None else estimated_input
+            output_tokens = output_tokens if output_tokens is not None else estimated_output
 
         enforce_user_plan_quota(
             db,
@@ -222,7 +226,7 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
     async def event_stream():
         chunks: list[str] = []
         try:
-            if settings.ai_provider in {"openai", "llama"}:
+            if settings.ai_provider in {"openai", "llama", "gemini"}:
                 ai_result = await generate_ai_reply_with_tools_async(
                     history_payload,
                     plan=getattr(current_user, "role", "free"),
@@ -248,8 +252,13 @@ def stream_message(request: Request, conversation_id: int, payload: MessageCreat
             input_tokens = usage.get("input_tokens")
             output_tokens = usage.get("output_tokens")
             model = usage.get("model")
-            if input_tokens is None or output_tokens is None or not model:
-                raise RuntimeError("AI provider did not return token usage")
+            if input_tokens is None or output_tokens is None:
+                estimated_input = max(1, sum(len(m.get("content", "")) for m in history_payload) // 4)
+                estimated_output = max(1, len(assistant_reply) // 4)
+                input_tokens = input_tokens if input_tokens is not None else estimated_input
+                output_tokens = output_tokens if output_tokens is not None else estimated_output
+            if not model:
+                model = settings.ai_provider if settings.ai_provider != "mock" else "mock"
 
             assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=assistant_reply, commit=False)
             record_ai_usage(
