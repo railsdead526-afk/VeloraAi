@@ -132,7 +132,7 @@ def generate_ai_reply_from_history(messages: list[dict]) -> AIResult:
     config = get_provider_config()
     if config.name == "mock":
         return _mock_result(messages)
-    if config.name in {"openai", "llama"}:
+    if config.name in {"openai", "llama", "gemini"}:
         return _request_openai_compatible(messages)
     raise RuntimeError("AI provider is not configured")
 
