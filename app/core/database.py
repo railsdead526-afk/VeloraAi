@@ -28,9 +28,10 @@ engine = create_engine(
 
 _IS_PG = settings.database_url.startswith(("postgresql://", "postgresql+psycopg2://"))
 
-def _apply_search_path(dbapi_connection, connection_record):
+def _apply_search_path(dbapi_connection, connection_record, *args):
     # Ensure search_path is set for each connection (covers both new connections
-    # and pooled connections that may have lost the setting).
+    # and pooled connections that may have lost the setting). Accepts extra args
+    # because the `checkout` pool event passes a third `connectable` argument.
     cursor = dbapi_connection.cursor()
     cursor.execute(f'SET search_path TO "{settings.database_schema}", public')
     cursor.close()
