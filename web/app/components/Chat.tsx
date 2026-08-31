@@ -6,6 +6,7 @@ import {
   createConversation,
   getCurrentUser,
   getCsrfToken,
+  getAuthToken,
   getMessages,
   getStreamUrl,
   listConversations,
@@ -229,6 +230,10 @@ export default function Chat() {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        // Bearer auth skips the server-side CSRF check. The CSRF cookie lives
+        // on the API domain and cannot be read cross-origin, so without this
+        // header every streaming request would fail with 403.
+        ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
         ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken() as string } : {}),
       },
       body: JSON.stringify({
