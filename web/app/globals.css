@@ -20,51 +20,29 @@
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
 }
 
-html {
-  scroll-behavior: smooth;
-  background: var(--bg);
-  scrollbar-color: #26364a transparent;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-
+html { scroll-behavior: smooth; background: var(--bg); scrollbar-color: #26364a transparent; }
+body { margin: 0; min-width: 320px; background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 * { box-sizing: border-box; }
-
 a { color: inherit; }
 button, input, textarea, select { font: inherit; }
-
-::selection {
-  background: rgba(108, 92, 211, .30);
-  color: #fff;
-}
-
-*:focus-visible {
-  outline: 2px solid var(--cyan);
-  outline-offset: 3px;
-}
-
+::selection { background: rgba(108,92,211,.30); color: #fff; }
+*:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: #26364a;
-  border-radius: 999px;
-}
+::-webkit-scrollbar-thumb { background: #26364a; border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: #344a66; }
+
+/* Unified VeloraAi workspace polish. Chat.tsx still owns behavior; these rules only improve presentation. */
+button { transition: background .16s ease, border-color .16s ease, opacity .16s ease, transform .16s ease; }
+button:not(:disabled):hover { transform: translateY(-1px); }
+button:disabled { cursor: not-allowed; opacity: .55; }
+input::placeholder { color: var(--muted-2); }
+
+@media (max-width: 767px) {
+  body { min-width: 320px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
