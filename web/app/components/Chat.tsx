@@ -18,6 +18,9 @@ import {
   type Message,
   type User,
 } from '../../lib/api'
+import AgentActivity, { type AgentActivityItem } from './agent/AgentActivity'
+import './agent/AgentActivity.css'
+import './Chat.css'
 
 interface PendingConfirmation {
   conversationId: number
@@ -52,8 +55,42 @@ export default function Chat() {
   const [useRag, setUseRag] = useState(true)
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [toolActivity, setToolActivity] = useState('')
+  const [activityItems, setActivityItems] = useState<AgentActivityItem[]>([])
+  const activityStartedAt = useRef(new Map<string, number>())
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
+
+  const resetActivity = () => {
+    setToolActivity('')
+    setActivityItems([])
+    activityStartedAt.current.clear()
+  }
+
+  const startActivity = (name: string) => {
+    const id = `tool-${Date.now()}-${name}`
+    activityStartedAt.current.set(id, performance.now())
+    setActivityItems((items) => [
+      ...items,
+      { id, title: name, detail: 'VeloraAi is using this tool to complete your request.', status: 'running' },
+    ])
+    return id
+  }
+
+  const finishLatestActivity = (status: 'completed' | 'error', detail?: string) => {
+    setActivityItems((items) => {
+      const index = [...items].reverse().findIndex((item) => item.status === 'running')
+      if (index < 0) return items
+      const actualIndex = items.length - 1 - index
+      const item = items[actualIndex]
+      const started = activityStartedAt.current.get(item.id)
+      const duration = started ? `${((performance.now() - started) / 1000).toFixed(1)}s` : undefined
+      return items.map((current, currentIndex) =>
+        currentIndex === actualIndex
+          ? { ...current, status, duration, detail: detail || current.detail }
+          : current,
+      )
+    })
+  }
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -81,7 +118,7 @@ export default function Chat() {
       setMessages([])
       setActiveChat(null)
       setPendingConfirmation(null)
-      setToolActivity('')
+      resetActivity()
       setLoading(false)
       setError('Your session has expired. Please sign in again.')
     })
@@ -94,7 +131,7 @@ export default function Chat() {
       try {
         setMessages(await getMessages(activeChat))
         setPendingConfirmation(null)
-        setToolActivity('')
+        resetActivity()
         setError('')
       } catch (loadError) {
         console.error(loadError)
@@ -106,7 +143,7 @@ export default function Chat() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, pendingConfirmation])
+  }, [messages, pendingConfirmation, activityItems])
 
   const parseStream = async (response: Response, userMessage: Message): Promise<StreamResult> => {
     if (!response.body) throw new Error('Streaming response is unavailable')
@@ -141,27 +178,24 @@ export default function Chat() {
         assistantContent += payload.content
         if (!assistantStarted) {
           assistantStarted = true
-          setMessages((current) => [
-            ...current,
-            {
-              id: assistantPlaceholderId,
-              conversation_id: userMessage.conversation_id,
-              role: 'assistant',
-              content: assistantContent,
-              created_at: new Date().toISOString(),
-            },
-          ])
+          setMessages((current) => [...current, {
+            id: assistantPlaceholderId,
+            conversation_id: userMessage.conversation_id,
+            role: 'assistant',
+            content: assistantContent,
+            created_at: new Date().toISOString(),
+          }])
         } else {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantId ? { ...message, content: assistantContent } : message,
-            ),
-          )
+          setMessages((current) => current.map((message) =>
+            message.id === assistantId ? { ...message, content: assistantContent } : message,
+          ))
         }
       }
 
       if (payload.type === 'tool_start') {
-        setToolActivity(payload.name ? `Using ${payload.name}…` : 'Using a tool…')
+        const name = payload.name || 'Tool'
+        setToolActivity(`Using ${name}…`)
+        startActivity(name)
       }
 
       if (payload.type === 'tool_confirmation_required') {
@@ -169,21 +203,26 @@ export default function Chat() {
         confirmationToolName = payload.name || 'protected tool'
         confirmationToolCallId = payload.tool_call_id || ''
         confirmationToken = payload.confirmation_token || ''
+        finishLatestActivity('completed', 'Waiting for your approval before continuing.')
         setToolActivity('')
       }
 
-      if (payload.type === 'tool_end') setToolActivity('')
+      if (payload.type === 'tool_end') {
+        finishLatestActivity('completed', payload.detail || 'Tool completed successfully.')
+        setToolActivity('')
+      }
 
       if (payload.type === 'done' && payload.message_id) {
         assistantId = payload.message_id
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === assistantPlaceholderId ? { ...message, id: assistantId } : message,
-          ),
-        )
+        setMessages((current) => current.map((message) =>
+          message.id === assistantPlaceholderId ? { ...message, id: assistantId } : message,
+        ))
       }
 
-      if (payload.type === 'error') throw new Error(payload.detail || 'AI request failed')
+      if (payload.type === 'error') {
+        finishLatestActivity('error', payload.detail || 'The agent encountered an error.')
+        throw new Error(payload.detail || 'AI request failed')
+      }
     }
 
     while (true) {
@@ -207,13 +246,7 @@ export default function Chat() {
     }
   }
 
-  const streamConversation = async (
-    conversationId: number,
-    content: string,
-    useRagValue: boolean,
-    confirmationToken?: string,
-    tempMessageId?: number,
-  ) => {
+  const streamConversation = async (conversationId: number, content: string, useRagValue: boolean, confirmationToken?: string, tempMessageId?: number) => {
     const userMessage: Message = {
       id: tempMessageId ?? -Date.now(),
       conversation_id: conversationId,
@@ -230,9 +263,6 @@ export default function Chat() {
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        // Bearer auth skips the server-side CSRF check. The CSRF cookie lives
-        // on the API domain and cannot be read cross-origin, so without this
-        // header every streaming request would fail with 403.
         ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
         ...(getCsrfToken() ? { 'X-CSRF-Token': getCsrfToken() as string } : {}),
       },
@@ -257,7 +287,6 @@ export default function Chat() {
     }
 
     const result = await parseStream(response, userMessage)
-
     if (result.confirmationRequired) {
       if (!result.confirmationToken) throw new Error('Server did not provide a confirmation token')
       setPendingConfirmation({
@@ -279,12 +308,10 @@ export default function Chat() {
   const sendMessage = async () => {
     const content = input.trim()
     if (!content || !user || loading || pendingConfirmation) return
-
     setError('')
     setInput('')
     setLoading(true)
-    setToolActivity('')
-
+    resetActivity()
     try {
       let conversationId = activeChat
       if (!conversationId) {
@@ -311,15 +338,9 @@ export default function Chat() {
     setPendingConfirmation(null)
     setMessages((current) => current.filter((message) => message.id !== confirmation.tempMessageId))
     setLoading(true)
-    setToolActivity(`Using ${confirmation.toolName}…`)
-
+    resetActivity()
     try {
-      await streamConversation(
-        confirmation.conversationId,
-        confirmation.content,
-        confirmation.useRag,
-        confirmation.confirmationToken,
-      )
+      await streamConversation(confirmation.conversationId, confirmation.content, confirmation.useRag, confirmation.confirmationToken)
     } catch (confirmError) {
       console.error(confirmError)
       setError(confirmError instanceof Error ? confirmError.message : 'Tool confirmation failed')
@@ -337,7 +358,7 @@ export default function Chat() {
     const tempMessageId = pendingConfirmation.tempMessageId
     setPendingConfirmation(null)
     setMessages((current) => current.filter((message) => message.id !== tempMessageId))
-    setToolActivity('')
+    resetActivity()
     try {
       setMessages(await getMessages(conversationId))
       setError('Action cancelled.')
@@ -353,9 +374,8 @@ export default function Chat() {
     setError('')
     setAuthLoading(true)
     try {
-      if (authMode === 'login') {
-        await login(email.trim(), password)
-      } else {
+      if (authMode === 'login') await login(email.trim(), password)
+      else {
         await register(email.trim(), password)
         await login(email.trim(), password)
       }
@@ -379,7 +399,7 @@ export default function Chat() {
     setMessages([])
     setActiveChat(null)
     setPendingConfirmation(null)
-    setToolActivity('')
+    resetActivity()
     setLoading(false)
   }
 
@@ -390,126 +410,112 @@ export default function Chat() {
       setChats((current) => [chat, ...current])
       setActiveChat(chat.id)
       setMessages([])
+      resetActivity()
     } catch (createError) {
       console.error(createError)
       setError(createError instanceof Error ? createError.message : 'Failed to create conversation')
     }
   }
 
-  if (authLoading) return <main style={styles.center}><div style={styles.card}><strong>VELORAAI</strong><span>Loading…</span></div></main>
+  if (authLoading) return <main className="velora-auth"><div className="velora-auth__card"><strong>VeloraAi</strong><span>Loading…</span></div></main>
 
   if (!user) {
     return (
-      <main style={styles.center}>
-        <form onSubmit={handleAuth} style={styles.card}>
-          <div style={styles.logo}>VELORAAI</div>
-          <h1 style={styles.title}>{authMode === 'login' ? 'Sign in' : 'Create an account'}</h1>
-          <p style={styles.muted}>{authMode === 'login' ? 'Use the same email and password you already set up.' : 'Pick a password you will remember. Minimum 8 characters.'}</p>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" type="email" autoComplete="email" style={styles.input} required />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} style={styles.input} required minLength={8} maxLength={128} />
-          {authError && <div style={styles.error}>{authError}</div>}
-          <button type="submit" style={styles.primary}>{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
-          <button type="button" onClick={() => setAuthMode((mode) => (mode === 'login' ? 'register' : 'login'))} style={styles.link}>
-            {authMode === 'login' ? 'Do not have an account yet' : 'Back to sign in'}
-          </button>
+      <main className="velora-auth">
+        <form onSubmit={handleAuth} className="velora-auth__card">
+          <div className="velora-wordmark">VeloraAi</div>
+          <h1>{authMode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p>{authMode === 'login' ? 'Continue where your agent left off.' : 'Start building with one intelligent agent.'}</p>
+          <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="Email" type="email" autoComplete="email" required />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" autoComplete={authMode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} />
+          {authError && <div className="velora-error">{authError}</div>}
+          <button type="submit" className="velora-primary">{authMode === 'login' ? 'Sign in' : 'Create account'}</button>
+          <button type="button" onClick={() => setAuthMode((mode) => mode === 'login' ? 'register' : 'login')} className="velora-link">{authMode === 'login' ? 'Create an account' : 'Back to sign in'}</button>
         </form>
       </main>
     )
   }
 
+  const activeTitle = chats.find((chat) => chat.id === activeChat)?.title || 'New conversation'
+
   return (
-    <main style={styles.app}>
-      <aside style={styles.sidebar}>
-        <div>
-          <div style={styles.logo}>VELORAAI</div>
-          <div style={styles.role}>{user.role.toUpperCase()}</div>
+    <main className="velora-app">
+      <aside className="velora-sidebar">
+        <div className="velora-sidebar__top">
+          <div className="velora-wordmark">VeloraAi</div>
+          <span className="velora-agent-badge">ONE AGENT</span>
         </div>
-        <button onClick={() => void createNewChat()} disabled={loading || Boolean(pendingConfirmation)} style={styles.secondary}>+ New conversation</button>
-        <div style={styles.chatList}>
+        <button onClick={() => void createNewChat()} disabled={loading || Boolean(pendingConfirmation)} className="velora-new-chat">+ New conversation</button>
+        <div className="velora-sidebar__label">Conversations</div>
+        <div className="velora-chat-list">
           {chats.map((chat) => (
-            <button key={chat.id} onClick={() => setActiveChat(chat.id)} disabled={loading || Boolean(pendingConfirmation)} style={{ ...styles.chatItem, ...(activeChat === chat.id ? styles.chatItemActive : {}) }}>
+            <button key={chat.id} onClick={() => setActiveChat(chat.id)} disabled={loading || Boolean(pendingConfirmation)} className={`velora-chat-item ${activeChat === chat.id ? 'is-active' : ''}`}>
               {chat.title}
             </button>
           ))}
         </div>
-        <button onClick={logout} style={styles.link}>Sign out</button>
+        <button onClick={logout} className="velora-link">Sign out</button>
       </aside>
 
-      <section style={styles.main}>
-        <header style={styles.header}>
-          <strong>{chats.find((chat) => chat.id === activeChat)?.title || 'New conversation'}</strong>
-          <label style={styles.rag}><input type="checkbox" checked={useRag} onChange={(event) => setUseRag(event.target.checked)} disabled={Boolean(pendingConfirmation)} /> Use knowledge base</label>
+      <section className="velora-main">
+        <header className="velora-header">
+          <div>
+            <strong>{activeTitle}</strong>
+            <span>VeloraAi Agent</span>
+          </div>
+          <label className="velora-rag"><input type="checkbox" checked={useRag} onChange={(event) => setUseRag(event.target.checked)} disabled={Boolean(pendingConfirmation)} /> Knowledge context</label>
         </header>
 
-        <div style={styles.messages}>
-          {messages.length === 0 && <div style={styles.empty}><div style={styles.logo}>VELORAAI</div><h2>Start a conversation</h2><p style={styles.muted}>Ask anything or paste a document. Conversations are saved automatically.</p></div>}
-          {messages.map((message) => (
-            <div key={`${message.id}-${message.created_at}`} style={{ ...styles.row, justifyContent: message.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{ ...styles.bubble, ...(message.role === 'user' ? styles.userBubble : styles.assistantBubble) }}>
-                <div style={styles.messageRole}>{message.role === 'user' ? 'You' : 'VeloraAi'}</div>
-                <div>{message.content}</div>
+        <div className="velora-content">
+          <div className="velora-messages">
+            {messages.length === 0 && (
+              <div className="velora-empty">
+                <div className="velora-orb">V</div>
+                <p className="velora-eyebrow">ONE INTELLIGENT AGENT</p>
+                <h1>What are we building?</h1>
+                <p>Ask VeloraAi to research, code, debug, analyze, or use your connected tools. You never need to choose a mode.</p>
               </div>
-            </div>
-          ))}
+            )}
+            {messages.map((message) => (
+              <div key={`${message.id}-${message.created_at}`} className={`velora-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}>
+                <div className="velora-message__role">{message.role === 'user' ? 'You' : 'VeloraAi'}</div>
+                <div className="velora-message__body">{message.content}</div>
+              </div>
+            ))}
 
-          {toolActivity && <div style={styles.typing}>{toolActivity}</div>}
-          {pendingConfirmation && (
-            <div style={styles.confirmation}>
-              <strong>Confirm this action</strong>
-              <p style={styles.muted}>VeloraAi wants to run <strong>{pendingConfirmation.toolName}</strong> before answering. This will execute on your data.</p>
-              <div style={styles.actions}>
-                <button onClick={() => void cancelPendingTool()} disabled={loading} style={styles.secondary}>Cancel</button>
-                <button onClick={() => void confirmPendingTool()} disabled={loading} style={styles.primary}>Approve</button>
+            {pendingConfirmation && (
+              <div className="velora-confirmation">
+                <div className="velora-confirmation__icon">!</div>
+                <div>
+                  <strong>Approval needed</strong>
+                  <p>VeloraAi wants to run <strong>{pendingConfirmation.toolName}</strong> on your connected data before continuing.</p>
+                  <div className="velora-actions">
+                    <button onClick={() => void cancelPendingTool()} disabled={loading} className="velora-secondary">Cancel</button>
+                    <button onClick={() => void confirmPendingTool()} disabled={loading} className="velora-primary">Approve action</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-          {loading && !toolActivity && !pendingConfirmation && <div style={styles.typing}>VeloraAi is thinking…</div>}
-          {error && <div style={styles.error}>{error}</div>}
-          <div ref={chatEndRef} />
+            )}
+            {loading && !pendingConfirmation && !activityItems.length && <div className="velora-thinking"><span /> VeloraAi is working…</div>}
+            {error && <div className="velora-error">{error}</div>}
+            <div ref={chatEndRef} />
+          </div>
+
+          <aside className={`velora-activity-panel ${activityItems.length ? 'has-activity' : ''}`}>
+            {activityItems.length ? <AgentActivity items={activityItems} /> : <div className="velora-context-empty"><span>Agent activity</span><p>Tool work will appear here while VeloraAi is working.</p></div>}
+          </aside>
         </div>
 
-        <div style={styles.composerWrap}>
-          <div style={styles.composer}>
-            <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void sendMessage() } }} placeholder={pendingConfirmation ? 'Approve the requested tool above…' : 'Message VeloraAi…'} style={styles.composerInput} disabled={loading || Boolean(pendingConfirmation)} />
-            {loading ? <button onClick={() => abortRef.current?.abort()} style={styles.secondary}>Stop</button> : <button onClick={() => void sendMessage()} disabled={!input.trim() || Boolean(pendingConfirmation)} style={styles.primary}>Send</button>}
+        <div className="velora-composer-wrap">
+          <div className="velora-composer">
+            <input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage() } }} placeholder={pendingConfirmation ? 'Approve the requested action above…' : 'Ask VeloraAi to build, analyze, research, or fix…'} disabled={loading || Boolean(pendingConfirmation)} />
+            <div className="velora-composer__bottom">
+              <span>＋ Attach</span><span>Tools</span><span>Context {useRag ? 'On' : 'Off'}</span>
+              {loading ? <button onClick={() => abortRef.current?.abort()} className="velora-secondary">Stop</button> : <button onClick={() => void sendMessage()} disabled={!input.trim() || Boolean(pendingConfirmation)} className="velora-primary">Send ↑</button>}
+            </div>
           </div>
         </div>
       </section>
     </main>
   )
-}
-
-const styles: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', minHeight: '100vh', background: '#080808', color: '#f5f5f5', fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif' },
-  sidebar: { width: 260, minWidth: 260, minHeight: '100vh', background: '#101010', borderRight: '1px solid #242424', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 },
-  main: { flex: 1, minWidth: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' },
-  header: { height: 64, borderBottom: '1px solid #242424', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px' },
-  messages: { flex: 1, overflowY: 'auto', padding: '28px 20px 120px' },
-  row: { display: 'flex', marginBottom: 16 },
-  bubble: { maxWidth: 'min(820px, 88%)', padding: '14px 16px', borderRadius: 16, lineHeight: 1.6 },
-  userBubble: { background: '#d97706', color: '#111' },
-  assistantBubble: { background: '#151515', border: '1px solid #282828' },
-  messageRole: { fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.65, marginBottom: 6 },
-  chatList: { display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto', flex: 1 },
-  chatItem: { border: 0, background: 'transparent', color: '#bdbdbd', padding: '10px 12px', borderRadius: 9, textAlign: 'left', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  chatItemActive: { background: '#1e1e1e', color: '#fff' },
-  logo: { letterSpacing: '0.16em', fontWeight: 800, fontSize: 13 },
-  role: { marginTop: 6, color: '#929292', fontSize: 10, letterSpacing: '0.14em' },
-  rag: { color: '#aaa', fontSize: 12, display: 'flex', gap: 6, alignItems: 'center' },
-  composerWrap: { position: 'fixed', left: 260, right: 0, bottom: 0, padding: 16, background: 'linear-gradient(180deg, rgba(8,8,8,0), #080808 38%)' },
-  composer: { maxWidth: 900, margin: '0 auto', display: 'flex', gap: 10, padding: 8, border: '1px solid #2c2c2c', background: '#111', borderRadius: 16 },
-  composerInput: { flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', color: '#fff', padding: '12px 14px', fontSize: 15 },
-  secondary: { border: '1px solid #3a3a3a', background: '#171717', color: '#fff', borderRadius: 10, padding: '10px 14px', cursor: 'pointer' },
-  primary: { border: 0, background: '#d97706', color: '#111', borderRadius: 10, padding: '10px 14px', fontWeight: 800, cursor: 'pointer' },
-  link: { border: 0, background: 'transparent', color: '#9a9a9a', cursor: 'pointer', padding: 8, textAlign: 'left' },
-  typing: { color: '#8d8d8d', fontSize: 13, marginBottom: 12 },
-  confirmation: { maxWidth: 620, margin: '8px auto 16px', border: '1px solid #5a4724', background: '#17130b', borderRadius: 14, padding: 16 },
-  actions: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 },
-  error: { color: '#ffb4a9', background: '#281613', border: '1px solid #4a241e', borderRadius: 10, padding: '10px 12px', fontSize: 12, marginBottom: 12 },
-  center: { minHeight: '100vh', background: '#080808', color: '#fff', display: 'grid', placeItems: 'center', padding: 20 },
-  card: { width: 'min(420px, 100%)', padding: 28, border: '1px solid #252525', borderRadius: 20, background: '#111', display: 'flex', flexDirection: 'column', gap: 12 },
-  title: { margin: '6px 0 0', fontSize: 28 },
-  input: { width: '100%', boxSizing: 'border-box', border: '1px solid #303030', borderRadius: 10, background: '#0c0c0c', color: '#fff', padding: '12px 14px', outline: 0 },
-  muted: { color: '#8c8c8c', fontSize: 13, lineHeight: 1.5, margin: 0 },
-  empty: { maxWidth: 720, margin: '18vh auto 0', textAlign: 'center', padding: 20 },
 }
