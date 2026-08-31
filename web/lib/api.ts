@@ -48,8 +48,13 @@ export function getCsrfToken(): string | null {
 
 function authHeaders(method = 'GET'): HeadersInit {
   const csrfToken = getCsrfToken()
+  const token = getAuthToken()
   return {
     'Content-Type': 'application/json',
+    // Bearer auth also skips the server-side CSRF check, which is required
+    // because the CSRF cookie lives on the API domain and cannot be read by
+    // JavaScript on a different frontend domain (e.g. Vercel).
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(csrfToken && !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
       ? { 'X-CSRF-Token': csrfToken }
       : {}),
@@ -91,10 +96,12 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 }
 
 export async function login(email: string, password: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>('/api/v1/auth/login', {
+  const response = await apiFetch<TokenResponse>('/api/v1/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   })
+  setAuthToken(response.access_token)
+  return response
 }
 
 export async function register(email: string, password: string): Promise<User> {
@@ -148,19 +155,27 @@ export function getStreamUrl(conversationId: number): string {
   return `${API_BASE_URL}/api/v1/conversations/${conversationId}/messages/stream`
 }
 
-// Kept as a compatibility shim for callers from the pre-cookie client.
+// Token is stored in localStorage so the frontend can send `Authorization:
+// Bearer` on every request. This is required because the CSRF double-submit
+// cookie lives on the API domain and cross-domain JavaScript (Vercel ->
+// Railway) can never read it.
 export function getAuthToken(): string | null {
-  return null
+  if (typeof window === 'undefined') return null
+  return (
+    window.localStorage.getItem('velora_token') ||
+    window.localStorage.getItem('velora_access_token')
+  )
 }
 
-export function setAuthToken(_token: string): void {
-  void _token
-  // The server stores the token in an HttpOnly cookie during login.
+export function setAuthToken(token: string): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem('velora_token', token)
 }
 
 export function clearAuthToken(): void {
-  // Remove a legacy token if an older client had stored one.
-  if (typeof window !== 'undefined') localStorage.removeItem('velora_access_token')
+  if (typeof window === 'undefined') return
+  window.localStorage.removeItem('velora_token')
+  window.localStorage.removeItem('velora_access_token')
 }
 
 export function subscribeAuthExpired(listener: () => void): () => void {
