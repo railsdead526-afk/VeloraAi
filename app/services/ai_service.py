@@ -77,16 +77,25 @@ def _request_openai_compatible(messages: list[dict]) -> AIResult:
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < settings.ai_max_retries:
                     time.sleep(min(2 ** attempt, 4))
                     continue
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as http_exc:
+                    body = ""
+                    try:
+                        body = http_exc.response.text[:800]
+                    except Exception:
+                        pass
+                    logger.error("AI provider HTTP %s body: %s", http_exc.response.status_code, body)
+                    raise RuntimeError(f"AI provider HTTP {http_exc.response.status_code}: {body[:500]}") from http_exc
                 data = response.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content")
                 if not content:
                     raise RuntimeError("AI provider returned an empty response")
                 input_tokens, output_tokens = parse_usage(data)
                 return AIResult(content.strip(), input_tokens, output_tokens, config.model)
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, RuntimeError) as exc:
             last_error = exc
-            logger.exception("AI provider request failed on attempt %s", attempt + 1)
+            logger.exception("AI provider request failed on attempt %s: %s", attempt + 1, exc)
             if attempt < settings.ai_max_retries:
                 time.sleep(min(2 ** attempt, 4))
                 continue
@@ -171,24 +180,39 @@ async def stream_ai_reply_from_history(
             headers = {"Content-Type": "application/json"}
             if config.api_key:
                 headers["Authorization"] = f"Bearer {config.api_key}"
+            # Gemini via Google OpenAI-compat does NOT support stream_options include_usage (400)
+            stream_payload: dict = {
+                "model": config.model,
+                "messages": build_api_messages(messages),
+                "temperature": 0.7,
+                "stream": True,
+            }
+            if config.name != "gemini":
+                stream_payload["stream_options"] = {"include_usage": True}
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
                     "POST",
                     f"{config.base_url}/chat/completions",
                     headers=headers,
-                    json={
-                        "model": config.model,
-                        "messages": build_api_messages(messages),
-                        "temperature": 0.7,
-                        "stream": True,
-                        "stream_options": {"include_usage": True},
-                    },
+                    json=stream_payload,
                 ) as response:
                     if response.status_code in {429, 500, 502, 503, 504} and attempt < settings.ai_max_retries:
                         await response.aread()
                         await _async_backoff(attempt)
                         continue
-                    response.raise_for_status()
+                    try:
+                        response.raise_for_status()
+                    except httpx.HTTPStatusError as http_exc:
+                        body = ""
+                        try:
+                            body = (await http_exc.response.aread()).decode()[:800] if hasattr(http_exc.response, 'aread') else http_exc.response.text[:800]
+                        except Exception:
+                            try:
+                                body = http_exc.response.text[:800]
+                            except Exception:
+                                pass
+                        logger.error("AI streaming HTTP %s body: %s", http_exc.response.status_code, body)
+                        raise RuntimeError(f"AI provider HTTP {http_exc.response.status_code}: {body[:500]}") from http_exc
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):
                             continue
@@ -213,9 +237,9 @@ async def stream_ai_reply_from_history(
                             streamed_content = True
                             yield content
                     return
-        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, RuntimeError) as exc:
             last_error = exc
-            logger.exception("AI streaming request failed on attempt %s", attempt + 1)
+            logger.exception("AI streaming request failed on attempt %s: %s", attempt + 1, exc)
             if streamed_content:
                 break
             if attempt < settings.ai_max_retries:
