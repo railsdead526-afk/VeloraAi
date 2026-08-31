@@ -47,8 +47,11 @@ def enforce_user_plan_quota(db: Session, user, *, additional_tokens: int = 0) ->
 
 
 def _history_with_rag_context(db: Session, *, user_id: int, history_payload: list[dict], query: str, use_rag: bool) -> list[dict]:
+    # Ensure current user turn is last — Gemini rejects ending with model
+    query_msg = {"role": "user", "content": query.strip()} if query and query.strip() else None
+    append = lambda payload: [*payload, query_msg] if query_msg else payload
     if not use_rag:
-        return history_payload
+        return append(history_payload)
 
     has_documents = (
         db.query(Document.id)
@@ -57,7 +60,7 @@ def _history_with_rag_context(db: Session, *, user_id: int, history_payload: lis
         is not None
     )
     if not has_documents:
-        return history_payload
+        return append(history_payload)
 
     try:
         results = retrieve_chunks(db, user_id=user_id, query=query, limit=5)
@@ -69,14 +72,14 @@ def _history_with_rag_context(db: Session, *, user_id: int, history_payload: lis
 
     context = build_context(results)
     if not context:
-        return history_payload
+        return append(history_payload)
 
     rag_instruction = (
         "Use the following user-owned document context when it is relevant to the user's request. "
         "Do not claim facts from the context that are not present. If the context is insufficient, say so.\n\n"
         f"{context}"
     )
-    return [{"role": "system", "content": rag_instruction}, *history_payload]
+    return append([{"role": "system", "content": rag_instruction}, *history_payload])
 
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)

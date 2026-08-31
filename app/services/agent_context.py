@@ -35,8 +35,10 @@ def build_agent_history(
 ) -> list[dict]:
     history = get_messages_by_conversation(db, conversation_id)
     history_payload = [{"role": message.role, "content": message.content} for message in history]
+    # Always append current user query as last turn — Gemini (and OpenAI) require last message to be user
+    query_msg = {"role": "user", "content": query.strip()} if query and query.strip() else None
     if not use_rag:
-        return history_payload
+        return [*history_payload, query_msg] if query_msg else history_payload
 
     has_documents = (
         db.query(Document.id)
@@ -45,12 +47,12 @@ def build_agent_history(
         is not None
     )
     if not has_documents:
-        return history_payload
+        return [*history_payload, query_msg] if query_msg else history_payload
 
     results = retrieve_chunks(db, user_id=user_id, query=query, limit=5)
     context = build_context(results)
     if not context:
-        return history_payload
+        return [*history_payload, query_msg] if query_msg else history_payload
 
     instruction = (
         "Use the following user-owned document context when it is relevant to the user's request. "
@@ -58,4 +60,5 @@ def build_agent_history(
         "Do not claim facts from the context that are not present. If the context is insufficient, say so.\n\n"
         f"{context}"
     )
-    return [{"role": "system", "content": instruction}, *history_payload]
+    base = [{"role": "system", "content": instruction}, *history_payload]
+    return [*base, query_msg] if query_msg else base
