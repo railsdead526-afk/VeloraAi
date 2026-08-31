@@ -56,6 +56,7 @@ export default function Chat() {
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingConfirmation | null>(null)
   const [toolActivity, setToolActivity] = useState('')
   const [activityItems, setActivityItems] = useState<AgentActivityItem[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const activityStartedAt = useRef(new Map<string, number>())
   const abortRef = useRef<AbortController | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -118,6 +119,7 @@ export default function Chat() {
       setMessages([])
       setActiveChat(null)
       setPendingConfirmation(null)
+      setSidebarOpen(false)
       resetActivity()
       setLoading(false)
       setError('Your session has expired. Please sign in again.')
@@ -399,6 +401,7 @@ export default function Chat() {
     setMessages([])
     setActiveChat(null)
     setPendingConfirmation(null)
+    setSidebarOpen(false)
     resetActivity()
     setLoading(false)
   }
@@ -410,6 +413,7 @@ export default function Chat() {
       setChats((current) => [chat, ...current])
       setActiveChat(chat.id)
       setMessages([])
+      setSidebarOpen(false)
       resetActivity()
     } catch (createError) {
       console.error(createError)
@@ -440,16 +444,18 @@ export default function Chat() {
 
   return (
     <main className="velora-app">
-      <aside className="velora-sidebar">
+      {sidebarOpen && <button aria-label="Close navigation" className="velora-sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
+      <aside className={`velora-sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="velora-sidebar__top">
           <div className="velora-wordmark">VeloraAi</div>
           <span className="velora-agent-badge">ONE AGENT</span>
+          <button type="button" aria-label="Close navigation" className="velora-sidebar-close" onClick={() => setSidebarOpen(false)}>×</button>
         </div>
         <button onClick={() => void createNewChat()} disabled={loading || Boolean(pendingConfirmation)} className="velora-new-chat">+ New conversation</button>
         <div className="velora-sidebar__label">Conversations</div>
         <div className="velora-chat-list">
           {chats.map((chat) => (
-            <button key={chat.id} onClick={() => setActiveChat(chat.id)} disabled={loading || Boolean(pendingConfirmation)} className={`velora-chat-item ${activeChat === chat.id ? 'is-active' : ''}`}>
+            <button key={chat.id} onClick={() => { setActiveChat(chat.id); setSidebarOpen(false) }} disabled={loading || Boolean(pendingConfirmation)} className={`velora-chat-item ${activeChat === chat.id ? 'is-active' : ''}`}>
               {chat.title}
             </button>
           ))}
@@ -459,6 +465,11 @@ export default function Chat() {
 
       <section className="velora-main">
         <header className="velora-header">
+          <button type="button" aria-label="Open navigation" aria-expanded={sidebarOpen} className="velora-menu-button" onClick={() => setSidebarOpen(true)}>
+            <span />
+            <span />
+            <span />
+          </button>
           <div>
             <strong>{activeTitle}</strong>
             <span>VeloraAi Agent</span>
