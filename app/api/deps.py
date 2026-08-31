@@ -6,6 +6,7 @@ from jwt import InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.api.auth_cookies import ACCESS_TOKEN_COOKIE, CSRF_COOKIE
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.crud.user import get_user_by_email
@@ -34,7 +35,16 @@ def get_current_user(
 
     if cookie_token and not bearer_token and request.method in _UNSAFE_METHODS:
         expected_csrf = request.cookies.get(CSRF_COOKIE)
-        if not expected_csrf or not csrf_token or not hmac.compare_digest(expected_csrf, csrf_token):
+        # The CSRF cookie lives on the API domain and cannot be read by
+        # JavaScript on a different frontend domain (e.g. Vercel -> Railway),
+        # so the header will legitimately be absent for cross-site clients.
+        # As a CSRF mitigation, accept requests whose Origin matches the
+        # configured CORS_ORIGINS allowlist; otherwise enforce double-submit.
+        origin = (request.headers.get("origin") or "").rstrip("/")
+        allowed_origins = {value.rstrip("/") for value in settings.cors_origins}
+        if not (origin and origin in allowed_origins) and (
+            not expected_csrf or not csrf_token or not hmac.compare_digest(expected_csrf, csrf_token)
+        ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
 
     try:
