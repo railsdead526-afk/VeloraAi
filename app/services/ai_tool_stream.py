@@ -202,7 +202,20 @@ async def stream_ai_reply_with_tools(
                     await _backoff(attempt)
 
             if last_error is not None:
-                logger.exception("Streaming AI tool-loop request failed: %s", last_error)
+                # Surface the actual provider error body in logs so round-2
+                # 400s on tool-message continuations are diagnosable.
+                response_body = "<no response body>"
+                response = getattr(last_error, "response", None)
+                if response is not None:
+                    try:
+                        response_body = response.text
+                    except Exception:
+                        pass
+                logger.exception(
+                    "Streaming AI tool-loop request failed: %s body=%s",
+                    last_error,
+                    (response_body or "")[:1000],
+                )
                 raise RuntimeError(f"AI service temporarily unavailable: {last_error}") from last_error
 
             if not tool_calls:
@@ -225,7 +238,10 @@ async def stream_ai_reply_with_tools(
 
             assistant_message: dict[str, Any] = {
                 "role": "assistant",
-                "content": "".join(assistant_content_parts) or None,
+                # Gemini's OpenAI-compat endpoint rejects assistant turns with
+                # content=null while tool_calls are present. Always send a
+                # string (possibly empty) so round-2 succeeds.
+                "content": "".join(assistant_content_parts),
                 "tool_calls": [],
             }
             for index in sorted(tool_calls):
