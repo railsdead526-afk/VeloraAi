@@ -8,11 +8,17 @@ import httpx
 from app.tools.providers import ToolProviderError, _request
 
 
-def _token() -> str:
+def _token(required: bool = True) -> str:
+    """GitHub token. Read-only operations on public repositories work
+    unauthenticated, so callers pass required=False."""
     token = os.getenv("GITHUB_TOKEN", "")
-    if not token:
+    if not token and required:
         raise ToolProviderError("GITHUB_TOKEN is not configured")
     return token
+
+
+def _read_token() -> str:
+    return _token(required=False)
 
 
 def _repo(arguments: dict[str, Any]) -> str:
@@ -23,7 +29,7 @@ def _repo(arguments: dict[str, Any]) -> str:
 
 
 def github_search_code(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     query = str(arguments.get("query", "")).strip()
     if not query:
         raise ToolProviderError("query is required")
@@ -35,14 +41,14 @@ def github_search_code(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_list_branches(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     per_page = min(max(int(arguments.get("per_page", 30)), 1), 100)
     return _request("GET", f"https://api.github.com/repos/{repo}/branches?per_page={per_page}", token=token)
 
 
 def github_list_issues(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     state = str(arguments.get("state", "open"))
     if state not in {"open", "closed", "all"}:
@@ -52,7 +58,7 @@ def github_list_issues(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_list_pull_requests(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     state = str(arguments.get("state", "open"))
     if state not in {"open", "closed", "all"}:
@@ -137,7 +143,7 @@ def github_create_issue_comment(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_get_pr_reviews(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     pr_number = int(arguments.get("pr_number", 0))
     if pr_number < 1:
@@ -146,7 +152,7 @@ def github_get_pr_reviews(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_get_pr_comments(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     pr_number = int(arguments.get("pr_number", 0))
     if pr_number < 1:
@@ -155,7 +161,7 @@ def github_get_pr_comments(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_get_commit_status(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     sha = str(arguments.get("sha", "")).strip()
     if not sha:
@@ -164,7 +170,7 @@ def github_get_commit_status(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def github_list_workflow_jobs(arguments: dict[str, Any]) -> dict[str, Any]:
-    token = _token()
+    token = _read_token()
     repo = _repo(arguments)
     run_id = int(arguments.get("run_id", 0))
     if run_id < 1:

@@ -128,8 +128,11 @@ async def stream_ai_reply_with_tools(
                 "tools": registry.schemas_for(selected_tools),
                 "tool_choice": "auto",
                 "stream": True,
-                "stream_options": {"include_usage": True},
             }
+            # Gemini via Google OpenAI-compat does NOT support stream_options
+            # include_usage (returns HTTP 400). Mirror ai_service.py behavior.
+            if config.name != "gemini":
+                payload["stream_options"] = {"include_usage": True}
 
             tool_calls: dict[int, dict[str, str]] = {}
             assistant_content_parts: list[str] = []

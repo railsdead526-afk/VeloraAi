@@ -83,7 +83,9 @@ def stream_native_message(
         usage = {"input_tokens": None, "output_tokens": None, "model": None}
         confirmation_required = False
         try:
-            if settings.ai_provider in {"openai", "llama"}:
+            # gemini is routed through the OpenAI-compatible tool streaming path
+            # as well: it supports function calling and the agent loop below.
+            if settings.ai_provider in {"openai", "llama", "gemini"}:
                 async for event in stream_ai_reply_with_tools(
                     history_payload,
                     db=db,
@@ -143,43 +145,26 @@ def stream_native_message(
             assistant_reply = "".join(chunks).strip()
             if not assistant_reply:
                 raise RuntimeError("AI provider returned an empty response")
-
             input_tokens = usage.get("input_tokens")
             output_tokens = usage.get("output_tokens")
             model = usage.get("model")
-            # Fallback if provider didn't return usage (e.g. Gemini streaming without include_usage)
             if input_tokens is None or output_tokens is None:
-                # estimate: ~4 chars per token
                 estimated_input = max(1, sum(len(m.get("content", "")) for m in history_payload) // 4)
                 estimated_output = max(1, len(assistant_reply) // 4)
                 input_tokens = input_tokens if input_tokens is not None else estimated_input
                 output_tokens = output_tokens if output_tokens is not None else estimated_output
             if not model:
                 model = settings.ai_provider if settings.ai_provider != "mock" else "mock"
-                usage["model"] = model
 
-            user_message = create_message(
-                db,
-                conversation_id=conversation_id,
-                role="user",
-                content=payload.content,
-                commit=False,
-            )
-            assistant_message = create_message(
-                db,
-                conversation_id=conversation_id,
-                role="assistant",
-                content=assistant_reply,
-                commit=False,
-            )
+            assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=assistant_reply, commit=False)
             record_ai_usage(
                 db,
                 user_id=user_id,
                 conversation_id=conversation_id,
                 provider="mock" if model == "mock" else settings.ai_provider,
                 model=model,
-                input_tokens=int(input_tokens),
-                output_tokens=int(output_tokens),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 commit=False,
             )
             enforce_user_plan_quota(

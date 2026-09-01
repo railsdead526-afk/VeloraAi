@@ -86,30 +86,27 @@ def _history_with_rag_context(db: Session, *, user_id: int, history_payload: lis
 def create_new_conversation(payload: ConversationCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     return create_conversation(db, user_id=current_user.id, title=payload.title or "New Chat")
 
-@router.get("/{conversation_id}", response_model=ConversationResponse)
-def get_conversation_detail(
-    conversation_id: int,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    conversation = get_conversation_by_id(db, conversation_id)
-
-    if not conversation or conversation.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found"
-        )
-
-    return conversation
-
 
 @router.get("", response_model=list[ConversationResponse])
 def list_my_conversations(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    return get_user_conversations(db, current_user.id)
+    return get_user_conversations(db, user_id=current_user.id)
+
+
+@router.get("/{conversation_id}", response_model=ConversationResponse)
+def get_conversation(conversation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    conversation = get_conversation_by_id(db, conversation_id)
+    if not conversation or conversation.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return conversation
 
 
 @router.patch("/{conversation_id}", response_model=ConversationResponse)
-def rename_conversation(conversation_id: int, payload: ConversationUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_conversation(
+    conversation_id: int,
+    payload: ConversationUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -117,7 +114,7 @@ def rename_conversation(conversation_id: int, payload: ConversationUpdate, db: S
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_conversation(conversation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_conversation_route(conversation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
@@ -126,34 +123,53 @@ def remove_conversation(conversation_id: int, db: Session = Depends(get_db), cur
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
-def list_conversation_messages(conversation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def list_conversation_messages(
+    conversation_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return get_messages_by_conversation(db, conversation_id)
 
 
-@router.post("/{conversation_id}/messages", response_model=ChatReplyResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{conversation_id}/messages",
+    response_model=ChatReplyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 @limiter.limit(settings.rate_limit_chat)
-def send_message(request: Request, conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def send_message(
+    request: Request,
+    conversation_id: int,
+    payload: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
     enforce_user_plan_quota(db, current_user)
-    user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
-    history = get_messages_by_conversation(db, conversation_id)
-    history_payload = [{"role": message.role, "content": message.content} for message in history]
+
+    try:
+        user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content)
+    except Exception:
+        db.rollback()
+        raise
+
     history_payload = _history_with_rag_context(
         db,
         user_id=current_user.id,
-        history_payload=history_payload,
+        history_payload=[{"role": m.role, "content": m.content} for m in get_messages_by_conversation(db, conversation_id)],
         query=payload.content,
         use_rag=payload.use_rag,
     )
 
     try:
-        if settings.ai_provider in {"openai", "llama"}:
+        # gemini supports function calling through the OpenAI-compatible loop.
+        if settings.ai_provider in {"openai", "llama", "gemini"}:
             ai_result = generate_ai_reply_with_tools(
                 history_payload,
                 plan=getattr(current_user, "role", "free"),
@@ -162,22 +178,17 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
             )
         else:
             ai_result = generate_ai_reply_from_history(history_payload)
+    except QuotaExceededError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc) or "AI service temporarily unavailable",
+        ) from exc
 
-        input_tokens = ai_result.input_tokens
-        output_tokens = ai_result.output_tokens
-        # fallback if provider didn't return usage
-        if input_tokens is None or output_tokens is None:
-            estimated_input = max(1, sum(len(m.get("content", "")) for m in history_payload) // 4)
-            estimated_output = max(1, len(ai_result.content) // 4)
-            input_tokens = input_tokens if input_tokens is not None else estimated_input
-            output_tokens = output_tokens if output_tokens is not None else estimated_output
-
-        enforce_user_plan_quota(
-            db,
-            current_user,
-            additional_tokens=int(input_tokens) + int(output_tokens),
-        )
-
+    try:
         assistant_message = create_message(db, conversation_id=conversation_id, role="assistant", content=ai_result.content, commit=False)
         record_ai_usage(
             db,
@@ -185,51 +196,65 @@ def send_message(request: Request, conversation_id: int, payload: MessageCreate,
             conversation_id=conversation_id,
             provider="mock" if ai_result.model == "mock" else settings.ai_provider,
             model=ai_result.model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=ai_result.input_tokens,
+            output_tokens=ai_result.output_tokens,
             commit=False,
+        )
+        enforce_user_plan_quota(
+            db,
+            current_user,
+            additional_tokens=(ai_result.input_tokens or 0) + (ai_result.output_tokens or 0),
         )
         db.commit()
         db.refresh(user_message)
         db.refresh(assistant_message)
-    except RuntimeError as exc:
+    except QuotaExceededError as exc:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except HTTPException:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
+    except Exception:
         db.rollback()
         raise
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to complete the request") from exc
 
-    return {"user_message": user_message, "assistant_message": assistant_message}
+    return ChatReplyResponse(user_message=user_message, assistant_message=assistant_message)
 
 
 @router.post("/{conversation_id}/messages/stream")
 @limiter.limit(settings.rate_limit_chat)
-def stream_message(request: Request, conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def send_message_stream(
+    request: Request,
+    conversation_id: int,
+    payload: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
     conversation = get_conversation_by_id(db, conversation_id)
     if not conversation or conversation.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
     enforce_user_plan_quota(db, current_user)
-    user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content, commit=False)
-    history = get_messages_by_conversation(db, conversation_id)
-    history_payload = [{"role": message.role, "content": message.content} for message in history]
+
+    try:
+        user_message = create_message(db, conversation_id=conversation_id, role="user", content=payload.content)
+    except Exception:
+        db.rollback()
+        raise
+
     history_payload = _history_with_rag_context(
         db,
         user_id=current_user.id,
-        history_payload=history_payload,
+        history_payload=[{"role": m.role, "content": m.content} for m in get_messages_by_conversation(db, conversation_id)],
         query=payload.content,
         use_rag=payload.use_rag,
     )
-    usage = {}
+
     user_id = current_user.id
+    usage = {}
 
     async def event_stream():
         chunks: list[str] = []
         try:
-            if settings.ai_provider in {"openai", "llama"}:
+            # gemini supports function calling through the OpenAI-compatible loop.
+            if settings.ai_provider in {"openai", "llama", "gemini"}:
                 ai_result = await generate_ai_reply_with_tools_async(
                     history_payload,
                     plan=getattr(current_user, "role", "free"),
